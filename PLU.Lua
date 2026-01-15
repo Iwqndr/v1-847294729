@@ -2683,30 +2683,41 @@ local function getAimbotTarget()
 	return bestTarget
 end
 
--- // LOADING GUI (REMOVED) \\
-
 -- // MAIN SCRIPT STARTUP \\
--- Load saved data first
-local dataLoaded = loadPlayerData()
+local loadedData = _G.PLifeLoad()
 
--- Auto-start without loading GUI
+if loadedData then
+    savedPositions = loadedData.waypoints or {}
+    flySpeed = loadedData.flySpeed or 50
+    currentSpeedValue = loadedData.currentSpeedValue or 50
+    -- Add any other settings you want to load here
+    print("✅ Settings Loaded from Global Manager")
+else
+    print("📝 No save file found, using defaults.")
+end
+
+-- Auto-start logic
 task.spawn(function()
-	-- Start main script immediately
-	toggled = true
-	print("⚔� Auto Melee: ON")
-	sessionStartTime = tick()
-	totalHits = 0
-	targetHistory = {}
-	showNotification()
-	startFiring()
+    toggled = true
+    print("⚔️ Auto Melee: ON")
+    sessionStartTime = tick()
+    totalHits = 0
+    targetHistory = {}
+    showNotification()
+    startFiring()
 
-	-- Auto-save every 30 seconds
-	while true do
-		task.wait(30)
-		if scriptActive then
-			savePlayerData()
-		end
-	end
+    -- Auto-save loop
+    while true do
+        task.wait(30)
+        if toggled then -- Using 'toggled' instead of 'scriptActive'
+            -- We call the GLOBAL save function here
+            _G.PLifeSave({
+                waypoints = savedPositions,
+                flySpeed = flySpeed,
+                currentSpeedValue = currentSpeedValue
+            })
+            print("💾 Auto-saved data.")
+        end
+    end
 end)
-
 print("✅ PLU.V5 Loaded")
