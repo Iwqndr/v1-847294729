@@ -722,15 +722,39 @@ local function openSettingsMenu()
 		btnCorner.CornerRadius = UDim.new(0, 4)
 		btnCorner.Parent = btn
 
-		btn.MouseButton1Click:Connect(function()
-			btn.Text = "Press Key..."
-			local input = UserInputService.InputBegan:Wait()
-			if input.KeyCode and input.KeyCode ~= Enum.KeyCode.Unknown then
-				SETTINGS[settingKey] = input.KeyCode
-				btn.Text = input.KeyCode.Name
-			end
-		end)
-	end
+btn.MouseButton1Click:Connect(function()
+    btn.Text = "Press Key..."
+    
+    -- Wait for the user to press a key
+    local input = UserInputService.InputBegan:Wait()
+    
+    if input.KeyCode and input.KeyCode ~= Enum.KeyCode.Unknown then
+        -- 1. Update the live setting
+        SETTINGS[settingKey] = input.KeyCode
+        btn.Text = input.KeyCode.Name
+        
+        -- 2. Prepare data for the SaveManager (Converting KeyCodes to Text)
+        local instantSave = {}
+        for k, v in pairs(SETTINGS) do
+            if typeof(v) == "EnumItem" then 
+                instantSave[k] = v.Name 
+            elseif v ~= nil then
+                instantSave[k] = v 
+            end
+        end
+
+        -- 3. Trigger the global save function
+        if _G.PLifeSave then
+            _G.PLifeSave({
+                settings = instantSave, 
+                waypoints = savedPositions,
+                flySpeed = flySpeed,
+                currentSpeedValue = currentSpeedValue
+            })
+            print("💾 Keybind '" .. settingKey .. "' saved to file!")
+        end
+    end
+end)
 
 	createSettingRow("Toggle Script", "TOGGLE_KEY")
 	createSettingRow("Destroy Script", "DESTROY_KEY")
@@ -2687,36 +2711,52 @@ end
 local loadedData = _G.PLifeLoad()
 
 if loadedData then
+    -- Restore normal variables
     savedPositions = loadedData.waypoints or {}
     flySpeed = loadedData.flySpeed or 50
     currentSpeedValue = loadedData.currentSpeedValue or 50
-    -- Add any other settings you want to load here
-    print("✅ Settings Loaded from Global Manager")
+    
+    -- Restore Keybinds from the settings table
+    if loadedData.settings then
+        for keyName, keyString in pairs(loadedData.settings) do
+            -- Only try to load it if the saved value isn't empty
+            if keyString and keyString ~= "nil" then
+                pcall(function()
+                    -- This converts the text "E" back into Enum.KeyCode.E
+                    SETTINGS[keyName] = Enum.KeyCode[keyString]
+                end)
+            end
+        end
+    end
+    print("✅ Settings & Keybinds Restored!")
 else
-    print("📝 No save file found, using defaults.")
+    print("📝 No save found. Using current script defaults.")
 end
-
--- Auto-start logic
+-- // Save \\
 task.spawn(function()
-    toggled = true
-    print("⚔️ Auto Melee: ON")
-    sessionStartTime = tick()
-    totalHits = 0
-    targetHistory = {}
-    showNotification()
-    startFiring()
-
-    -- Auto-save loop
     while true do
-        task.wait(30)
-        if toggled then -- Using 'toggled' instead of 'scriptActive'
-            -- We call the GLOBAL save function here
+        task.wait(30) -- Saves every 30 seconds
+        if toggled then
+            -- 1. Create a temporary table for saving
+            local saveSettings = {}
+            
+            -- 2. Convert KeyCodes to Text so they don't break the JSON
+            for k, v in pairs(SETTINGS) do
+                if typeof(v) == "EnumItem" then
+                    saveSettings[k] = v.Name -- Saves "E" instead of Enum.KeyCode.E
+                elseif v ~= nil then
+                    saveSettings[k] = v
+                end
+            end
+
+            -- 3. Send it to the SaveManager
             _G.PLifeSave({
                 waypoints = savedPositions,
+                settings = saveSettings,
                 flySpeed = flySpeed,
                 currentSpeedValue = currentSpeedValue
             })
-            print("💾 Auto-saved data.")
+            print("💾 Data auto-saved to workspace.")
         end
     end
 end)
