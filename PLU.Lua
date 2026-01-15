@@ -722,27 +722,31 @@ local function openSettingsMenu()
 		local btnCorner = Instance.new("UICorner")
 		btnCorner.CornerRadius = UDim.new(0, 4)
 		btnCorner.Parent = btn
-
+--// Key
 btn.MouseButton1Click:Connect(function()
     btn.Text = "Press Key..."
-    
-    -- Wait for the user to press a key
     local input = UserInputService.InputBegan:Wait()
-    
     if input.KeyCode and input.KeyCode ~= Enum.KeyCode.Unknown then
-        -- 1. Update the live setting
         SETTINGS[settingKey] = input.KeyCode
         btn.Text = input.KeyCode.Name
         
-        -- 2. Prepare data for the SaveManager (Converting KeyCodes to Text)
+        -- INSTANT SAVE LOGIC
         local instantSave = {}
         for k, v in pairs(SETTINGS) do
-            if typeof(v) == "EnumItem" then 
-                instantSave[k] = v.Name 
-            elseif v ~= nil then
-                instantSave[k] = v 
-            end
+            if typeof(v) == "EnumItem" then instantSave[k] = v.Name 
+            elseif v ~= nil then instantSave[k] = v end
         end
+
+        if _G.PLifeSave then
+            _G.PLifeSave({
+                settings = instantSave, 
+                waypoints = savedPositions,
+                flySpeed = flySpeed,
+                currentSpeedValue = currentSpeedValue
+            })
+        end
+    end
+end)
 
         -- 3. Trigger the global save function
         if _G.PLifeSave then
@@ -752,7 +756,7 @@ btn.MouseButton1Click:Connect(function()
                 flySpeed = flySpeed,
                 currentSpeedValue = currentSpeedValue
             })
-            print("💾 Keybind '" .. settingKey .. "' saved to file!")
+            print(" Keybind '" .. settingKey .. "' saved to file!")
         end
     end
 end)
