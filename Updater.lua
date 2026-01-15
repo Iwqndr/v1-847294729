@@ -126,6 +126,7 @@ end)
 
 if success then
     updateProgress(0.5, "Verifying integrity...")
+    task.wait(0.2)
     
     local currentHash = #code + (string.byte(string.sub(code, 1, 1)) or 0) + (string.byte(string.sub(code, -1)) or 0)
     
@@ -137,14 +138,13 @@ if success then
     elseif _G.LastScriptHash == nil then
         print("First time load initialized.")
         updateProgress(0.7, "First time load initialized...")
-        task.wait(0.3)
     else
         print("No updates found, Your all good!")
         updateProgress(0.7, "No updates found, Your all good!")
-        task.wait(0.3)
     end
     
     _G.LastScriptHash = currentHash
+    task.wait(0.3)
     
     updateProgress(0.9, "Loading PLU.Lua...")
     print("Loading PLU.Lua...")
@@ -152,11 +152,17 @@ if success then
     task.wait(0.3)
     
     updateProgress(1, "Complete!")
-    task.wait(0.5)
-    
-    loadstring(code)()
-    
     task.wait(0.3)
+    
+    local loadSuccess, loadError = pcall(function()
+        loadstring(code)()
+    end)
+    
+    if not loadSuccess then
+        warn("Error loading script: " .. tostring(loadError))
+    end
+    
+    task.wait(0.5)
     closeLoader()
 else
     updateProgress(0.3, "CRITICAL ERROR: Connection failed.")
