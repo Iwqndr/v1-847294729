@@ -11,18 +11,20 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- // CONFIGURATION (Default Keys - Can be changed in Settings) \\
 local loadedData = _G.PLifeLoad and _G.PLifeLoad()
 
-if loadedData then
-    -- Restore normal variables
+-- // STARTUP: LOAD SAVED SETTINGS \\
+local successLoad, loadedData = pcall(function() 
+    return _G.PLifeLoad and _G.PLifeLoad() 
+end)
+
+if successLoad and loadedData then
     savedPositions = loadedData.waypoints or {}
     flySpeed = loadedData.flySpeed or 50
     currentSpeedValue = loadedData.currentSpeedValue or 50
     
-    -- Restore Keybinds from the settings table
     if loadedData.settings then
         for keyName, keyString in pairs(loadedData.settings) do
             if keyString and keyString ~= "nil" then
                 pcall(function()
-                    -- Converts "E" back into Enum.KeyCode.E
                     SETTINGS[keyName] = Enum.KeyCode[keyString]
                 end)
             end
@@ -30,7 +32,7 @@ if loadedData then
     end
     print("✅ Settings & Keybinds Restored!")
 else
-    print("📝 No save found or SaveManager not loaded yet.")
+    print("📝 No save found or SaveManager not ready.")
 end
 
 -- Constants
@@ -726,24 +728,30 @@ local function openSettingsMenu()
 btn.MouseButton1Click:Connect(function()
     btn.Text = "Press Key..."
     local input = UserInputService.InputBegan:Wait()
+    
     if input.KeyCode and input.KeyCode ~= Enum.KeyCode.Unknown then
         SETTINGS[settingKey] = input.KeyCode
         btn.Text = input.KeyCode.Name
         
-        -- INSTANT SAVE LOGIC
+        -- Instant Save Logic
         local instantSave = {}
         for k, v in pairs(SETTINGS) do
-            if typeof(v) == "EnumItem" then instantSave[k] = v.Name 
-            elseif v ~= nil then instantSave[k] = v end
+            if typeof(v) == "EnumItem" then 
+                instantSave[k] = v.Name 
+            elseif v ~= nil then 
+                instantSave[k] = v 
+            end
         end
 
         if _G.PLifeSave then
-            _G.PLifeSave({
-                settings = instantSave, 
-                waypoints = savedPositions,
-                flySpeed = flySpeed,
-                currentSpeedValue = currentSpeedValue
-            })
+            pcall(function()
+                _G.PLifeSave({
+                    settings = instantSave, 
+                    waypoints = savedPositions,
+                    flySpeed = flySpeed,
+                    currentSpeedValue = currentSpeedValue
+                })
+            end)
         end
     end
 end)
@@ -2740,28 +2748,25 @@ end
 -- // Save \\
 task.spawn(function()
     while true do
-        task.wait(30) -- Saves every 30 seconds
-        if toggled then
-            -- 1. Create a temporary table for saving
+        task.wait(30)
+        if _G.PLifeSave then
             local saveSettings = {}
-            
-            -- 2. Convert KeyCodes to Text so they don't break the JSON
             for k, v in pairs(SETTINGS) do
                 if typeof(v) == "EnumItem" then
-                    saveSettings[k] = v.Name -- Saves "E" instead of Enum.KeyCode.E
+                    saveSettings[k] = v.Name
                 elseif v ~= nil then
                     saveSettings[k] = v
                 end
             end
 
-            -- 3. Send it to the SaveManager
-            _G.PLifeSave({
-                waypoints = savedPositions,
-                settings = saveSettings,
-                flySpeed = flySpeed,
-                currentSpeedValue = currentSpeedValue
-            })
-            print("💾 Data auto-saved to workspace.")
+            pcall(function()
+                _G.PLifeSave({
+                    waypoints = savedPositions,
+                    settings = saveSettings,
+                    flySpeed = flySpeed,
+                    currentSpeedValue = currentSpeedValue
+                })
+            end)
         end
     end
 end)
