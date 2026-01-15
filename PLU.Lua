@@ -59,7 +59,7 @@ local totalHits = 0
 local sessionStartTime = tick()
 local targetHistory = {}
 local lockMode = "Behind"
-local tracerLine = nil
+-- Tracer removed
 local fovCircle = nil
 local isSpeedEnabled = false
 local currentSpeedValue = 50 -- Default speed value (1-200)
@@ -91,12 +91,180 @@ local savedWaypointPos = UDim2.new(0, 20, 0, 20) -- Persists position
 local waypointGui = nil
 local scrollFrame = nil
 
+-- Save system variables (Client-Sided)
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local saveDebounce = false
+local SAVE_VERSION = "1.0"
+
+-- Save system functions
+local function encodeData(data)
+	return HttpService:JSONEncode(data)
+end
+
+local function decodeData(data)
+	return HttpService:JSONDecode(data)
+end
+
+-- Client-sided save using PlayerGui attributes
+local function savePlayerData()
+	if saveDebounce then return end
+	saveDebounce = true
+
+	local dataToSave = {
+		version = SAVE_VERSION,
+		settings = SETTINGS,
+		waypoints = savedPositions,
+		waypointGuiPos = savedWaypointPos,
+		flySpeed = flySpeed,
+		currentSpeedValue = currentSpeedValue,
+		MAX_DISTANCE = MAX_DISTANCE,
+		priorityMode = priorityMode,
+		lockMode = lockMode,
+		timestamp = tick()
+	}
+
+	local success, result = pcall(function()
+		-- Method 1: Try to save to PlayerGui attributes
+		local playerGui = player:WaitForChild("PlayerGui")
+		if playerGui then
+			-- Create a hidden ScreenGui to store data
+			local dataGui = playerGui:FindFirstChild("CombatDataStorage")
+			if not dataGui then
+				dataGui = Instance.new("ScreenGui")
+				dataGui.Name = "CombatDataStorage"
+				dataGui.Enabled = false
+				dataGui.Parent = playerGui
+			end
+
+			-- Store data in attributes
+			dataGui:SetAttribute("CombatData", encodeData(dataToSave))
+			dataGui:SetAttribute("LastSaved", tick())
+
+			-- Also try to save to replicated storage for cross-game persistence
+			local replicatedStorage = game:FindFirstChild("ReplicatedStorage")
+			if replicatedStorage then
+				local dataFolder = replicatedStorage:FindFirstChild("PlayerData")
+				if not dataFolder then
+					dataFolder = Instance.new("Folder")
+					dataFolder.Name = "PlayerData"
+					dataFolder.Parent = replicatedStorage
+				end
+
+				local playerData = dataFolder:FindFirstChild(tostring(player.UserId))
+				if not playerData then
+					playerData = Instance.new("StringValue")
+					playerData.Name = tostring(player.UserId)
+					playerData.Parent = dataFolder
+				end
+
+				playerData.Value = encodeData(dataToSave)
+			end
+
+			return true
+		end
+		return false
+	end)
+
+	if success then
+		print("✅ Settings and waypoints saved successfully!")
+	else
+		warn("❌ Failed to save data:", result)
+	end
+
+	task.wait(1)
+	saveDebounce = false
+end
+
+local function loadPlayerData()
+	local success, result = pcall(function()
+		-- Method 1: Try to load from PlayerGui attributes
+		local playerGui = player:WaitForChild("PlayerGui")
+		if playerGui then
+			local dataGui = playerGui:FindFirstChild("CombatDataStorage")
+			if dataGui and dataGui:GetAttribute("CombatData") then
+				return dataGui:GetAttribute("CombatData")
+			end
+		end
+
+		-- Method 2: Try to load from ReplicatedStorage
+		local replicatedStorage = game:FindFirstChild("ReplicatedStorage")
+		if replicatedStorage then
+			local dataFolder = replicatedStorage:FindFirstChild("PlayerData")
+			if dataFolder then
+				local playerData = dataFolder:FindFirstChild(tostring(player.UserId))
+				if playerData and playerData.Value and playerData.Value ~= "" then
+					return playerData.Value
+				end
+			end
+		end
+
+		return nil
+	end)
+
+	if success and result then
+		local loadedData = decodeData(result)
+
+		-- Check version compatibility
+		if loadedData.version and loadedData.version ~= SAVE_VERSION then
+			print("⚠️ Save version mismatch, updating format...")
+		end
+
+		-- Load settings
+		if loadedData.settings then
+			for key, value in pairs(loadedData.settings) do
+				if SETTINGS[key] ~= nil then
+					SETTINGS[key] = value
+				end
+			end
+		end
+
+		-- Load waypoints
+		if loadedData.waypoints then
+			savedPositions = loadedData.waypoints
+		end
+
+		-- Load GUI position
+		if loadedData.waypointGuiPos then
+			savedWaypointPos = loadedData.waypointGuiPos
+		end
+
+		-- Load speed settings
+		if loadedData.flySpeed then
+			flySpeed = loadedData.flySpeed
+		end
+
+		if loadedData.currentSpeedValue then
+			currentSpeedValue = loadedData.currentSpeedValue
+		end
+
+		-- Load combat settings
+		if loadedData.MAX_DISTANCE then
+			MAX_DISTANCE = loadedData.MAX_DISTANCE
+		end
+
+		if loadedData.priorityMode then
+			priorityMode = loadedData.priorityMode
+		end
+
+		if loadedData.lockMode then
+			lockMode = loadedData.lockMode
+		end
+
+		print("✅ Settings and waypoints loaded successfully!")
+		return true
+	else
+		print("📝 No saved data found, using defaults")
+		return false
+	end
+end
+
 -- // MISSING FUNCTIONS (Moved to top to fix nil value errors) \\
 
 -- ESP Functions
 local function updateESP()
 	if not isESPEnabled then return end
-	
+
 	-- Clear existing ESP objects
 	for _, obj in pairs(espObjects) do
 		if obj and obj.Parent then
@@ -104,7 +272,7 @@ local function updateESP()
 		end
 	end
 	espObjects = {}
-	
+
 	for _, otherPlayer in pairs(Players:GetPlayers()) do
 		if otherPlayer ~= player and otherPlayer.Team ~= player.Team then
 			local character = otherPlayer.Character
@@ -113,7 +281,7 @@ local function updateESP()
 				local humanoid = character:FindFirstChild("Humanoid")
 				if humanoidRootPart and humanoid and humanoid.Health > 0 then
 					local distance = (player.Character and player.Character:FindFirstChild("HumanoidRootPart") and (player.Character.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude or math.huge)
-					
+
 					if distance <= espRange then
 						-- Create ESP Box
 						local espBox = Instance.new("BoxHandleAdornment")
@@ -126,7 +294,7 @@ local function updateESP()
 						espBox.ZIndex = 10
 						espBox.Adornee = character
 						espBox.Parent = character
-						
+
 						-- Create ESP Label
 						local espLabel = Instance.new("BillboardGui")
 						espLabel.Name = "ESPLabel"
@@ -134,7 +302,7 @@ local function updateESP()
 						espLabel.StudsOffset = Vector3.new(0, 3, 0)
 						espLabel.AlwaysOnTop = true
 						espLabel.Parent = humanoidRootPart
-						
+
 						local nameLabel = Instance.new("TextLabel")
 						nameLabel.Size = UDim2.new(1, 0, 0, 20)
 						nameLabel.BackgroundTransparency = 0.5
@@ -144,7 +312,7 @@ local function updateESP()
 						nameLabel.Font = Enum.Font.SourceSansBold
 						nameLabel.TextSize = 14
 						nameLabel.Parent = espLabel
-						
+
 						local healthLabel = Instance.new("TextLabel")
 						healthLabel.Size = UDim2.new(1, 0, 0, 20)
 						healthLabel.Position = UDim2.new(0, 0, 0, 20)
@@ -155,7 +323,7 @@ local function updateESP()
 						healthLabel.Font = Enum.Font.SourceSans
 						healthLabel.TextSize = 12
 						healthLabel.Parent = espLabel
-						
+
 						table.insert(espObjects, espBox)
 						table.insert(espObjects, espLabel)
 					end
@@ -177,17 +345,17 @@ local function updateFly()
 		end
 		return 
 	end
-	
+
 	local character = player.Character
 	if not character then return end
-	
+
 	local humanoid = character:FindFirstChild("Humanoid")
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-	
+
 	if humanoid and humanoidRootPart then
 		-- Set humanoid state to allow free movement
 		humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
-		
+
 		-- Create or update BodyVelocity for flight
 		if not flyBodyVelocity then
 			flyBodyVelocity = Instance.new("BodyVelocity")
@@ -195,11 +363,11 @@ local function updateFly()
 			flyBodyVelocity.P = 1000
 			flyBodyVelocity.Parent = humanoidRootPart
 		end
-		
+
 		-- Calculate fly direction based on camera and input
 		local camera = Workspace.CurrentCamera
 		local flyDirection = Vector3.new(0, 0, 0)
-		
+
 		-- Get input-based movement
 		if UserInputService:IsKeyDown(Enum.KeyCode.W) then
 			flyDirection = flyDirection + camera.CFrame.LookVector
@@ -219,7 +387,7 @@ local function updateFly()
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
 			flyDirection = flyDirection - Vector3.new(0, 1, 0)
 		end
-		
+
 		-- Apply velocity
 		if flyDirection.Magnitude > 0 then
 			flyDirection = flyDirection.Unit * flySpeed
@@ -227,7 +395,7 @@ local function updateFly()
 		else
 			flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
 		end
-		
+
 		-- Disable gravity while flying
 		humanoidRootPart.AssemblyLinearVelocity = flyBodyVelocity.Velocity
 	end
@@ -249,13 +417,13 @@ end
 -- Anti-Aim Functions
 local function updateAntiAim()
 	if not isAntiAimEnabled then return end
-	
+
 	local character = player.Character
 	if not character then return end
-	
+
 	local humanoid = character:FindFirstChild("Humanoid")
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-	
+
 	if humanoid and humanoidRootPart then
 		humanoid.AutoRotate = false
 		antiAimAngle = antiAimAngle + 5
@@ -267,10 +435,10 @@ end
 -- Infinite Jump Functions
 local function handleInfiniteJump()
 	if not isInfiniteJumpEnabled then return end
-	
+
 	local character = player.Character
 	if not character then return end
-	
+
 	local humanoid = character:FindFirstChild("Humanoid")
 	if humanoid and humanoid:GetState() == Enum.HumanoidStateType.Freefall then
 		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
@@ -291,7 +459,7 @@ local function toggleFreecam()
 			freecamCamera.Transparency = 1
 			freecamCamera.Position = character:FindFirstChild("HumanoidRootPart").Position
 			freecamCamera.Parent = Workspace
-			
+
 			Workspace.CurrentCamera.CameraSubject = freecamCamera
 		end
 	else
@@ -300,7 +468,7 @@ local function toggleFreecam()
 			freecamCamera:Destroy()
 			freecamCamera = nil
 		end
-		
+
 		if originalCamera then
 			Workspace.CurrentCamera.CameraSubject = originalCamera
 			originalCamera = nil
@@ -310,16 +478,16 @@ end
 
 local function updateFreecam()
 	if not isFreecamEnabled or not freecamCamera then return end
-	
+
 	local moveSpeed = 50
 	local camera = Workspace.CurrentCamera
-	
+
 	local forward = camera.CFrame.LookVector
 	local right = camera.CFrame.RightVector
 	local up = Vector3.new(0, 1, 0)
-	
+
 	local moveDirection = Vector3.new(0, 0, 0)
-	
+
 	if UserInputService:IsKeyDown(Enum.KeyCode.W) then
 		moveDirection = moveDirection + forward
 	end
@@ -338,7 +506,7 @@ local function updateFreecam()
 	if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
 		moveDirection = moveDirection - up
 	end
-	
+
 	if moveDirection.Magnitude > 0 then
 		moveDirection = moveDirection.Unit * moveSpeed
 		freecamCamera.Position = freecamCamera.Position + moveDirection * 0.016 -- ~60 FPS
@@ -349,14 +517,14 @@ end
 local function getAimbotTarget()
 	local character = player.Character
 	if not character then return nil end
-	
+
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
 	if not humanoidRootPart then return nil end
-	
+
 	local myTeam = player.Team
 	local bestTarget = nil
 	local bestDistance = aimbotFOV
-	
+
 	for _, otherPlayer in pairs(Players:GetPlayers()) do
 		if otherPlayer ~= player and otherPlayer.Team ~= myTeam then
 			local otherCharacter = otherPlayer.Character
@@ -376,39 +544,72 @@ local function getAimbotTarget()
 			end
 		end
 	end
-	
+
 	return bestTarget
 end
 
--- // GLASSY THEME HELPER \\
-local function applyGlassStyle(element)
+-- // MODERN GLASSY THEME HELPER \\
+local function applyGlassStyle(element, customSettings)
 	if element:IsA("GuiObject") then
-		element.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-		element.BackgroundTransparency = 0.2
+		local settings = customSettings or {}
+		
+		-- Enhanced glassmorphism with blur effect
+		element.BackgroundColor3 = settings.bgColor or Color3.fromRGB(15, 15, 20)
+		element.BackgroundTransparency = settings.bgTransparency or 0.15
 		element.BorderSizePixel = 0
 
+		-- Modern stroke with gradient
 		local stroke = Instance.new("UIStroke")
-		stroke.Color = Color3.fromRGB(255, 255, 255)
-		stroke.Thickness = 1
-		stroke.Transparency = 0.85
+		stroke.Color = settings.strokeColor or Color3.fromRGB(100, 150, 255)
+		stroke.Thickness = settings.strokeThickness or 1.5
+		stroke.Transparency = settings.strokeTransparency or 0.7
 		stroke.Parent = element
 
+		-- Enhanced corner radius
 		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0, 12)
+		corner.CornerRadius = UDim.new(0, settings.cornerRadius or 16)
 		corner.Parent = element
 
-		-- Optional Subtle Gradient
+		-- Modern gradient with more depth
 		local gradient = Instance.new("UIGradient")
 		gradient.Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 35)),
-			ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 25))
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(25, 25, 35)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(20, 20, 30)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 25))
 		})
 		gradient.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.1),
-			NumberSequenceKeypoint.new(1, 0.3)
+			NumberSequenceKeypoint.new(0, 0.05),
+			NumberSequenceKeypoint.new(0.5, 0.1),
+			NumberSequenceKeypoint.new(1, 0.2)
 		})
-		gradient.Rotation = 90
+		gradient.Rotation = 135
 		gradient.Parent = element
+
+		-- Add subtle shadow effect
+		if settings.addShadow ~= false then
+			local shadow = Instance.new("Frame")
+			shadow.Name = "Shadow"
+			shadow.Size = UDim2.new(1, 4, 1, 4)
+			shadow.Position = UDim2.new(0, 2, 0, 2)
+			shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+			shadow.BackgroundTransparency = 0.8
+			shadow.BorderSizePixel = 0
+			shadow.ZIndex = element.ZIndex - 1
+			shadow.Parent = element
+			
+			local shadowCorner = Instance.new("UICorner")
+			shadowCorner.CornerRadius = UDim.new(0, settings.cornerRadius or 16)
+			shadowCorner.Parent = shadow
+			
+			local shadowGradient = Instance.new("UIGradient")
+			shadowGradient.Color = ColorSequence.new(Color3.fromRGB(0, 0, 0))
+			shadowGradient.Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.9),
+				NumberSequenceKeypoint.new(1, 0.7)
+			})
+			shadowGradient.Rotation = 135
+			shadowGradient.Parent = shadow
+		end
 	end
 end
 
@@ -553,119 +754,227 @@ local function openSettingsMenu()
 
 	-- Speed Slider Section
 	local speedSection = Instance.new("Frame")
-	speedSection.Size = UDim2.new(1, -10, 0, 60)
+	speedSection.Size = UDim2.new(1, -10, 0, 100)
 	speedSection.Position = UDim2.new(0, 5, 0, 0)
 	speedSection.BackgroundTransparency = 1
 	speedSection.Parent = scroll
 
-	local speedLabel = Instance.new("TextLabel")
-	speedLabel.Size = UDim2.new(1, 0, 0, 20)
-	speedLabel.Position = UDim2.new(0, 0, 0, 0)
-	speedLabel.BackgroundTransparency = 1
-	speedLabel.Text = "⚡ Speed: " .. currentSpeedValue
-	speedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-	speedLabel.Font = Enum.Font.Gotham
-	speedLabel.TextSize = 12
-	speedLabel.TextXAlignment = Enum.TextXAlignment.Left
-	speedLabel.Parent = speedSection
+	-- Movement Speed Slider
+	local moveSpeedLabel = Instance.new("TextLabel")
+	moveSpeedLabel.Size = UDim2.new(1, 0, 0, 20)
+	moveSpeedLabel.Position = UDim2.new(0, 0, 0, 0)
+	moveSpeedLabel.BackgroundTransparency = 1
+	moveSpeedLabel.Text = "⚡ Movement Speed: " .. currentSpeedValue
+	moveSpeedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	moveSpeedLabel.Font = Enum.Font.Gotham
+	moveSpeedLabel.TextSize = 12
+	moveSpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+	moveSpeedLabel.Parent = speedSection
 
-	-- Slider
-	local sliderFrame = Instance.new("Frame")
-	sliderFrame.Size = UDim2.new(0, 150, 0, 20)
-	sliderFrame.Position = UDim2.new(0, 0, 0, 25)
-	sliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-	sliderFrame.BorderSizePixel = 0
-	sliderFrame.Parent = speedSection
+	-- Movement Speed Slider
+	local moveSliderFrame = Instance.new("Frame")
+	moveSliderFrame.Size = UDim2.new(0, 150, 0, 20)
+	moveSliderFrame.Position = UDim2.new(0, 0, 0, 25)
+	moveSliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	moveSliderFrame.BorderSizePixel = 0
+	moveSliderFrame.Parent = speedSection
 
-	local sliderCorner = Instance.new("UICorner")
-	sliderCorner.CornerRadius = UDim.new(0, 10)
-	sliderCorner.Parent = sliderFrame
+	local moveSliderCorner = Instance.new("UICorner")
+	moveSliderCorner.CornerRadius = UDim.new(0, 10)
+	moveSliderCorner.Parent = moveSliderFrame
 
-	local sliderFill = Instance.new("Frame")
-	sliderFill.Size = UDim2.new(currentSpeedValue / 200, 0, 1, 0)
-	sliderFill.Position = UDim2.new(0, 0, 0, 0)
-	sliderFill.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
-	sliderFill.BorderSizePixel = 0
-	sliderFill.Parent = sliderFrame
+	local moveSliderFill = Instance.new("Frame")
+	moveSliderFill.Size = UDim2.new(currentSpeedValue / 200, 0, 1, 0)
+	moveSliderFill.Position = UDim2.new(0, 0, 0, 0)
+	moveSliderFill.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+	moveSliderFill.BorderSizePixel = 0
+	moveSliderFill.Parent = moveSliderFrame
 
-	local fillCorner = Instance.new("UICorner")
-	fillCorner.CornerRadius = UDim.new(0, 10)
-	fillCorner.Parent = sliderFill
+	local moveFillCorner = Instance.new("UICorner")
+	moveFillCorner.CornerRadius = UDim.new(0, 10)
+	moveFillCorner.Parent = moveSliderFill
 
-	local sliderButton = Instance.new("TextButton")
-	sliderButton.Size = UDim2.new(0, 20, 0, 20)
-	sliderButton.Position = UDim2.new(currentSpeedValue / 200, -10, 0, 0)
-	sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	sliderButton.BorderSizePixel = 0
-	sliderButton.Text = ""
-	sliderButton.Parent = sliderFrame
+	local moveSliderButton = Instance.new("TextButton")
+	moveSliderButton.Size = UDim2.new(0, 20, 0, 20)
+	moveSliderButton.Position = UDim2.new(currentSpeedValue / 200, -10, 0, 0)
+	moveSliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	moveSliderButton.BorderSizePixel = 0
+	moveSliderButton.Text = ""
+	moveSliderButton.Parent = moveSliderFrame
 
-	local buttonCorner = Instance.new("UICorner")
-	buttonCorner.CornerRadius = UDim.new(0, 10)
-	buttonCorner.Parent = sliderButton
+	local moveButtonCorner = Instance.new("UICorner")
+	moveButtonCorner.CornerRadius = UDim.new(0, 10)
+	moveButtonCorner.Parent = moveSliderButton
 
-	-- Text Box
-	local speedBox = Instance.new("TextBox")
-	speedBox.Size = UDim2.new(0, 50, 0, 20)
-	speedBox.Position = UDim2.new(0, 160, 0, 25)
-	speedBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-	speedBox.Text = tostring(currentSpeedValue)
-	speedBox.TextColor3 = Color3.new(1, 1, 1)
-	speedBox.Font = Enum.Font.Gotham
-	speedBox.TextSize = 12
-	speedBox.Parent = speedSection
+	-- Movement Speed Text Box
+	local moveSpeedBox = Instance.new("TextBox")
+	moveSpeedBox.Size = UDim2.new(0, 50, 0, 20)
+	moveSpeedBox.Position = UDim2.new(0, 160, 0, 25)
+	moveSpeedBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	moveSpeedBox.Text = tostring(currentSpeedValue)
+	moveSpeedBox.TextColor3 = Color3.new(1, 1, 1)
+	moveSpeedBox.Font = Enum.Font.Gotham
+	moveSpeedBox.TextSize = 12
+	moveSpeedBox.Parent = speedSection
 
-	local boxCorner = Instance.new("UICorner")
-	boxCorner.CornerRadius = UDim.new(0, 4)
-	boxCorner.Parent = speedBox
+	local moveBoxCorner = Instance.new("UICorner")
+	moveBoxCorner.CornerRadius = UDim.new(0, 4)
+	moveBoxCorner.Parent = moveSpeedBox
 
-	-- Slider functionality
-	local draggingSlider = false
+	-- Flight Speed Slider
+	local flySpeedLabel = Instance.new("TextLabel")
+	flySpeedLabel.Size = UDim2.new(1, 0, 0, 20)
+	flySpeedLabel.Position = UDim2.new(0, 0, 0, 50)
+	flySpeedLabel.BackgroundTransparency = 1
+	flySpeedLabel.Text = "🦅 Flight Speed: " .. flySpeed
+	flySpeedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	flySpeedLabel.Font = Enum.Font.Gotham
+	flySpeedLabel.TextSize = 12
+	flySpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+	flySpeedLabel.Parent = speedSection
 
-	local function updateSpeed(value)
-		value = math.clamp(math.floor(value), 1, 200)
+	-- Flight Speed Slider
+	local flySliderFrame = Instance.new("Frame")
+	flySliderFrame.Size = UDim2.new(0, 150, 0, 20)
+	flySliderFrame.Position = UDim2.new(0, 0, 0, 75)
+	flySliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	flySliderFrame.BorderSizePixel = 0
+	flySliderFrame.Parent = speedSection
+
+	local flySliderCorner = Instance.new("UICorner")
+	flySliderCorner.CornerRadius = UDim.new(0, 10)
+	flySliderCorner.Parent = flySliderFrame
+
+	local flySliderFill = Instance.new("Frame")
+	flySliderFill.Size = UDim2.new(flySpeed / 200, 0, 1, 0)
+	flySliderFill.Position = UDim2.new(0, 0, 0, 0)
+	flySliderFill.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+	flySliderFill.BorderSizePixel = 0
+	flySliderFill.Parent = flySliderFrame
+
+	local flyFillCorner = Instance.new("UICorner")
+	flyFillCorner.CornerRadius = UDim.new(0, 10)
+	flyFillCorner.Parent = flySliderFill
+
+	local flySliderButton = Instance.new("TextButton")
+	flySliderButton.Size = UDim2.new(0, 20, 0, 20)
+	flySliderButton.Position = UDim2.new(flySpeed / 200, -10, 0, 0)
+	flySliderButton.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+	flySliderButton.BorderSizePixel = 0
+	flySliderButton.Text = ""
+	flySliderButton.Parent = flySliderFrame
+
+	local flyButtonCorner = Instance.new("UICorner")
+	flyButtonCorner.CornerRadius = UDim.new(0, 10)
+	flyButtonCorner.Parent = flySliderButton
+
+	-- Flight Speed Text Box
+	local flySpeedBox = Instance.new("TextBox")
+	flySpeedBox.Size = UDim2.new(0, 50, 0, 20)
+	flySpeedBox.Position = UDim2.new(0, 160, 0, 75)
+	flySpeedBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	flySpeedBox.Text = tostring(flySpeed)
+	flySpeedBox.TextColor3 = Color3.new(1, 1, 1)
+	flySpeedBox.Font = Enum.Font.Gotham
+	flySpeedBox.TextSize = 12
+	flySpeedBox.Parent = speedSection
+
+	local flyBoxCorner = Instance.new("UICorner")
+	flyBoxCorner.CornerRadius = UDim.new(0, 4)
+	flyBoxCorner.Parent = flySpeedBox
+
+	-- Movement Speed functionality
+	local draggingMoveSlider = false
+
+	local function updateMoveSpeed(value)
+		value = math.max(1, math.min(200, math.floor(value)))
 		currentSpeedValue = value
-		speedLabel.Text = "⚡ Speed: " .. value
-		speedBox.Text = tostring(value)
-		sliderFill.Size = UDim2.new(value / 200, 0, 1, 0)
-		sliderButton.Position = UDim2.new(value / 200, -10, 0, 0)
+		moveSpeedLabel.Text = "⚡ Movement Speed: " .. value
+		moveSpeedBox.Text = tostring(value)
+		moveSliderFill.Size = UDim2.new(value / 200, 0, 1, 0)
+		moveSliderButton.Position = UDim2.new(value / 200, -10, 0, 0)
 		updateSpeed()
+		savePlayerData()
 	end
 
-	sliderButton.InputBegan:Connect(function(input)
+	moveSliderButton.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			draggingSlider = true
+			draggingMoveSlider = true
 		end
 	end)
 
 	UserInputService.InputChanged:Connect(function(input)
-		if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
-			local relativeX = input.Position.X - sliderFrame.AbsolutePosition.X
-			local percentage = math.clamp(relativeX / sliderFrame.AbsoluteSize.X, 0, 1)
-			updateSpeed(percentage * 200)
+		if draggingMoveSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local relativeX = input.Position.X - moveSliderFrame.AbsolutePosition.X
+			local percentage = math.max(0, math.min(1, relativeX / moveSliderFrame.AbsoluteSize.X))
+			updateMoveSpeed(percentage * 200)
 		end
 	end)
 
 	UserInputService.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			draggingSlider = false
+			draggingMoveSlider = false
 		end
 	end)
 
-	speedBox.FocusLost:Connect(function(enterPressed)
+	moveSpeedBox.FocusLost:Connect(function(enterPressed)
 		if enterPressed then
-			local value = tonumber(speedBox.Text)
+			local value = tonumber(moveSpeedBox.Text)
 			if value then
-				updateSpeed(value)
+				updateMoveSpeed(value)
 			else
-				speedBox.Text = tostring(currentSpeedValue)
+				moveSpeedBox.Text = tostring(currentSpeedValue)
+			end
+		end
+	end)
+
+	-- Flight Speed functionality
+	local draggingFlySlider = false
+
+	local function updateFlySpeed(value)
+		value = math.max(1, math.min(200, math.floor(value)))
+		flySpeed = value
+		flySpeedLabel.Text = "🦅 Flight Speed: " .. value
+		flySpeedBox.Text = tostring(value)
+		flySliderFill.Size = UDim2.new(value / 200, 0, 1, 0)
+		flySliderButton.Position = UDim2.new(value / 200, -10, 0, 0)
+		savePlayerData()
+	end
+
+	flySliderButton.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			draggingFlySlider = true
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if draggingFlySlider and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local relativeX = input.Position.X - flySliderFrame.AbsolutePosition.X
+			local percentage = math.max(0, math.min(1, relativeX / flySliderFrame.AbsoluteSize.X))
+			updateFlySpeed(percentage * 200)
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			draggingFlySlider = false
+		end
+	end)
+
+	flySpeedBox.FocusLost:Connect(function(enterPressed)
+		if enterPressed then
+			local value = tonumber(flySpeedBox.Text)
+			if value then
+				updateFlySpeed(value)
+			else
+				flySpeedBox.Text = tostring(flySpeed)
 			end
 		end
 	end)
 
 	-- Animate In from right to left
 	settingsFrame.Position = UDim2.new(1, 10, 0, 0)
-	settingsFrame:TweenPosition(UDim2.new(1, -310, 0, 0), "Out", "Quad", 0.3, true)
+	settingsFrame:TweenPosition(UDim2.new(1, -360, 0, 0), "Out", "Quad", 0.3, true)
 end
 
 -- // GUI BUILDER \\
@@ -682,55 +991,95 @@ local function createNotificationGui()
 	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	screenGui.IgnoreGuiInset = true
 
-	tracerLine = Instance.new("Frame")
-	tracerLine.Name = "TracerLine"
-	tracerLine.AnchorPoint = Vector2.new(0.5, 0.5)
-	tracerLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	tracerLine.BorderSizePixel = 0
-	tracerLine.BackgroundTransparency = 0.5
-	tracerLine.Visible = false
-	tracerLine.Parent = screenGui
+	-- Tracer removed
 
 
 
 	local frame = Instance.new("Frame")
 	frame.Name = "NotificationFrame"
-	frame.Size = UDim2.new(0, 320, 0, 110)
+	frame.Size = UDim2.new(0, 340, 0, 120)
 	frame.Position = UDim2.new(1, 20, 1, 0)
 	frame.AnchorPoint = Vector2.new(1, 1)
-	applyGlassStyle(frame)
+	applyGlassStyle(frame, {
+		bgColor = Color3.fromRGB(10, 10, 15),
+		strokeColor = Color3.fromRGB(120, 180, 255),
+		cornerRadius = 20
+	})
 	frame.Parent = screenGui
 
 	local accentBar = Instance.new("Frame")
 	accentBar.Name = "AccentBar"
-	accentBar.Size = UDim2.new(1, 0, 0, 4)
+	accentBar.Size = UDim2.new(1, 0, 0, 6)
 	accentBar.Position = UDim2.new(0, 0, 0, 0)
 	accentBar.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
 	accentBar.BorderSizePixel = 0
 	accentBar.Parent = frame
 
 	local accentCorner = Instance.new("UICorner")
-	accentCorner.CornerRadius = UDim.new(0, 14)
+	accentCorner.CornerRadius = UDim.new(0, 20)
 	accentCorner.Parent = accentBar
+
+	-- Animated gradient for accent bar
+	local accentGradient = Instance.new("UIGradient")
+	accentGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 255, 100)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 255, 150)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 255, 100))
+	})
+	accentGradient.Parent = accentBar
+
+	-- Animate accent bar
+	task.spawn(function()
+		while accentBar.Parent and scriptActive do
+			TweenService:Create(accentGradient, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+				Rotation = 180
+			}):Play()
+			task.wait(2)
+		end
+	end)
 
 	local avatarFrame = Instance.new("Frame")
 	avatarFrame.Name = "AvatarFrame"
-	avatarFrame.Size = UDim2.new(0, 70, 0, 70)
-	avatarFrame.Position = UDim2.new(0, 15, 0, 25)
-	avatarFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+	avatarFrame.Size = UDim2.new(0, 80, 0, 80)
+	avatarFrame.Position = UDim2.new(0, 20, 0, 30)
+	avatarFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
 	avatarFrame.BorderSizePixel = 0
-	avatarFrame.BackgroundTransparency = 0.2
+	avatarFrame.BackgroundTransparency = 0.1
 	avatarFrame.Parent = frame
 
 	local avatarCorner = Instance.new("UICorner")
-	avatarCorner.CornerRadius = UDim.new(0, 12)
+	avatarCorner.CornerRadius = UDim.new(0, 16)
 	avatarCorner.Parent = avatarFrame
 
 	local avatarStroke = Instance.new("UIStroke")
 	avatarStroke.Name = "AvatarStroke"
 	avatarStroke.Color = Color3.fromRGB(100, 255, 100)
-	avatarStroke.Thickness = 3
+	avatarStroke.Thickness = 2.5
+	avatarStroke.Transparency = 0.3
 	avatarStroke.Parent = avatarFrame
+
+	-- Add glow effect to avatar frame
+	local avatarGlow = Instance.new("Frame")
+	avatarGlow.Name = "AvatarGlow"
+	avatarGlow.Size = UDim2.new(1, 8, 1, 8)
+	avatarGlow.Position = UDim2.new(0, -4, 0, -4)
+	avatarGlow.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+	avatarGlow.BackgroundTransparency = 0.9
+	avatarGlow.BorderSizePixel = 0
+	avatarGlow.ZIndex = avatarFrame.ZIndex - 1
+	avatarGlow.Parent = avatarFrame
+
+	local glowCorner = Instance.new("UICorner")
+	glowCorner.CornerRadius = UDim.new(0, 20)
+	glowCorner.Parent = avatarGlow
+
+	local glowGradient = Instance.new("UIGradient")
+	glowGradient.Color = ColorSequence.new(Color3.fromRGB(100, 255, 100))
+	glowGradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.95),
+		NumberSequenceKeypoint.new(1, 0.85)
+	})
+	glowGradient.Parent = avatarGlow
 
 	local avatar = Instance.new("ImageLabel")
 	avatar.Name = "Avatar"
@@ -745,8 +1094,8 @@ local function createNotificationGui()
 
 	local statusDot = Instance.new("Frame")
 	statusDot.Name = "StatusDot"
-	statusDot.Size = UDim2.new(0, 12, 0, 12)
-	statusDot.Position = UDim2.new(0, 100, 0, 18)
+	statusDot.Size = UDim2.new(0, 16, 0, 16)
+	statusDot.Position = UDim2.new(0, 110, 0, 20)
 	statusDot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
 	statusDot.BorderSizePixel = 0
 	statusDot.BackgroundTransparency = 0
@@ -756,11 +1105,34 @@ local function createNotificationGui()
 	dotCorner.CornerRadius = UDim.new(1, 0)
 	dotCorner.Parent = statusDot
 
+	-- Enhanced status dot with glow
+	local statusGlow = Instance.new("Frame")
+	statusGlow.Name = "StatusGlow"
+	statusGlow.Size = UDim2.new(0, 24, 0, 24)
+	statusGlow.Position = UDim2.new(0, -4, 0, -4)
+	statusGlow.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+	statusGlow.BackgroundTransparency = 0.8
+	statusGlow.BorderSizePixel = 0
+	statusGlow.ZIndex = statusDot.ZIndex - 1
+	statusGlow.Parent = statusDot
+
+	local glowDotCorner = Instance.new("UICorner")
+	glowDotCorner.CornerRadius = UDim.new(1, 0)
+	glowDotCorner.Parent = statusGlow
+
+	-- Smooth pulsing animation
 	task.spawn(function()
 		while frame.Parent and scriptActive do
+			-- Pulse the glow
+			TweenService:Create(statusGlow, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+				Size = UDim2.new(0, 28, 0, 28),
+				BackgroundTransparency = 0.9
+			}):Play()
+			
+			-- Pulse the dot
 			TweenService:Create(statusDot, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, -1, true), {
-				Size = UDim2.new(0, 14, 0, 14),
-				BackgroundTransparency = 0.3
+				Size = UDim2.new(0, 18, 0, 18),
+				BackgroundTransparency = 0.2
 			}):Play()
 			task.wait(0.8)
 		end
@@ -768,8 +1140,8 @@ local function createNotificationGui()
 
 	local textContainer = Instance.new("Frame")
 	textContainer.Name = "TextContainer"
-	textContainer.Size = UDim2.new(1, -125, 1, -30)
-	textContainer.Position = UDim2.new(0, 115, 0, 15)
+	textContainer.Size = UDim2.new(1, -130, 1, -35)
+	textContainer.Position = UDim2.new(0, 120, 0, 20)
 	textContainer.BackgroundTransparency = 1
 	textContainer.Parent = frame
 
@@ -787,16 +1159,32 @@ local function createNotificationGui()
 
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "NameLabel"
-	nameLabel.Size = UDim2.new(1, 0, 0, 28)
-	nameLabel.Position = UDim2.new(0, 0, 0, 16)
+	nameLabel.Size = UDim2.new(1, 0, 0, 32)
+	nameLabel.Position = UDim2.new(0, 0, 0, 18)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Text = "No Target"
 	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	nameLabel.TextSize = 18
+	nameLabel.TextSize = 20
 	nameLabel.Font = Enum.Font.GothamBold
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
 	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	nameLabel.Parent = textContainer
+
+	-- Add text shadow effect
+	local nameShadow = Instance.new("TextLabel")
+	nameShadow.Name = "NameShadow"
+	nameShadow.Size = UDim2.new(1, 0, 0, 32)
+	nameShadow.Position = UDim2.new(0, 1, 0, 19)
+	nameShadow.BackgroundTransparency = 1
+	nameShadow.Text = "No Target"
+	nameShadow.TextColor3 = Color3.fromRGB(0, 0, 0)
+	nameShadow.TextSize = 20
+	nameShadow.Font = Enum.Font.GothamBold
+	nameShadow.TextXAlignment = Enum.TextXAlignment.Left
+	nameShadow.TextTruncate = Enum.TextTruncate.AtEnd
+	nameShadow.TextTransparency = 0.5
+	nameShadow.ZIndex = nameLabel.ZIndex - 1
+	nameShadow.Parent = textContainer
 
 	local infoLabel = Instance.new("TextLabel")
 	infoLabel.Name = "InfoLabel"
@@ -834,12 +1222,16 @@ local function createWaypointManager()
 
 	waypointGui = Instance.new("Frame")
 	waypointGui.Name = "WaypointManager"
-	waypointGui.Size = UDim2.new(0, 300, 0, 400)
-	waypointGui.Position = UDim2.new(1, -320, 0.5, -200) -- Start in middle right
+	waypointGui.Size = UDim2.new(0, 320, 0, 420)
+	waypointGui.Position = UDim2.new(1, -340, 0.5, -210) -- Start in middle right
 	waypointGui.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	waypointGui.BorderSizePixel = 0
 	waypointGui.Parent = screenGui
-	applyGlassStyle(waypointGui)
+	applyGlassStyle(waypointGui, {
+		bgColor = Color3.fromRGB(10, 10, 15),
+		strokeColor = Color3.fromRGB(100, 150, 255),
+		cornerRadius = 20
+	})
 
 	local topBar = Instance.new("Frame")
 	topBar.Name = "TopBar"
@@ -1042,8 +1434,11 @@ local function createWaypointManager()
 
 	refreshWaypointList()
 
-	-- Slide In Animation
-	waypointGui:TweenPosition(UDim2.new(1, -320, 0.5, -200), "Out", "Quad", 0.5, true)
+	-- Enhanced Slide In Animation
+	waypointGui.Position = UDim2.new(1, 50, 0.5, -210)
+	TweenService:Create(waypointGui, TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Position = UDim2.new(1, -340, 0.5, -210)
+	}):Play()
 end
 
 -- // RENAME PROMPT \\
@@ -1129,10 +1524,14 @@ local function createStatsPanel()
 
 	statsFrame = Instance.new("Frame")
 	statsFrame.Name = "StatsFrame"
-	statsFrame.Size = UDim2.new(0, 320, 0, 130)
-	statsFrame.Position = UDim2.new(1, 20, 1, -150)
+	statsFrame.Size = UDim2.new(0, 340, 0, 140)
+	statsFrame.Position = UDim2.new(1, 20, 1, -160)
 	statsFrame.AnchorPoint = Vector2.new(1, 1)
-	applyGlassStyle(statsFrame)
+	applyGlassStyle(statsFrame, {
+		bgColor = Color3.fromRGB(12, 12, 18),
+		strokeColor = Color3.fromRGB(80, 120, 200),
+		cornerRadius = 18
+	})
 	statsFrame.Parent = screenGui
 
 	local statsTitle = Instance.new("TextLabel")
@@ -1218,9 +1617,9 @@ local function createStatsPanel()
 	tpLabel.TextXAlignment = Enum.TextXAlignment.Left
 	tpLabel.Parent = statsFrame
 
-	statsFrame.Position = UDim2.new(1, 20, 1, -150)
-	TweenService:Create(statsFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-		Position = UDim2.new(1, -20, 1, -150)
+	statsFrame.Position = UDim2.new(1, 50, 1, -160)
+	TweenService:Create(statsFrame, TweenInfo.new(0.7, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Position = UDim2.new(1, -20, 1, -160)
 	}):Play()
 end
 
@@ -1301,40 +1700,7 @@ local function updateStatsPanel()
 	end
 end
 
-local function updateTracer()
-	if not tracerLine then return end
-	local character = player.Character
-	local targetChar = currentTarget and currentTarget.Character
-
-	if not character or not character:FindFirstChild("HumanoidRootPart") then
-		tracerLine.Visible = false
-		return
-	end
-
-	local myHead = character:FindFirstChild("Head")
-	local targetHead = targetChar and targetChar:FindFirstChild("Head")
-
-	if myHead and targetHead then
-		local myHeadPos, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(myHead.Position)
-		local targetPos = Workspace.CurrentCamera:WorldToViewportPoint(targetHead.Position)
-
-		if onScreen then
-			tracerLine.Visible = true
-			tracerLine.Position = UDim2.new(0, myHeadPos.X, 0, myHeadPos.Y)
-			local center = Vector2.new(playerGui.AbsoluteSize.X / 2, playerGui.AbsoluteSize.Y / 2)
-
-			local dist = (Vector2.new(targetPos.X, targetPos.Y) - center).Magnitude
-			local angle = math.atan2(targetPos.Y - center.Y, targetPos.X - center.X)
-
-			tracerLine.Size = UDim2.new(0, dist, 0, 2)
-			tracerLine.Rotation = math.deg(angle)
-		else
-			tracerLine.Visible = false
-		end
-	else
-		tracerLine.Visible = false
-	end
-end
+-- Tracer function removed
 
 local function updateHighlight(targetPlayer)
 	if currentHighlight then
@@ -1624,7 +1990,7 @@ local function updateNotification(targetPlayer, distance, health)
 		if targetPlayer.Team then
 			teamColor = targetPlayer.TeamColor.Color
 			nameLabel.TextColor3 = teamColor
-			frame.BackgroundColor3 = Color3.fromRGB(math.clamp(teamColor.R * 50, 15, 40), math.clamp(teamColor.G * 50, 15, 40), math.clamp(teamColor.B * 50, 15, 40))
+			frame.BackgroundColor3 = Color3.fromRGB(math.max(teamColor.R * 50, 15), math.max(teamColor.G * 50, 15), math.max(teamColor.B * 50, 15))
 		else
 			nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		end
@@ -1655,7 +2021,9 @@ local function showNotification()
 	local frame = notifGui.NotificationFrame
 	frame.Position = UDim2.new(1, 20, 1, 0)
 
-	TweenService:Create(frame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+	-- Smooth slide-in with bounce effect
+	frame.Position = UDim2.new(1, 50, 1, -20)
+	TweenService:Create(frame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
 		Position = UDim2.new(1, -20, 1, -20)
 	}):Play()
 
@@ -1789,7 +2157,7 @@ local function startFiring()
 
 	RunService.RenderStepped:Connect(function()
 		if not scriptActive then return end
-		updateTracer()
+		-- Tracer update removed
 	end)
 
 	local character = player.Character
@@ -1835,7 +2203,7 @@ local function stopFiring()
 	currentTarget = nil
 	updateHighlight(nil)
 
-	if tracerLine then tracerLine.Visible = false end
+	-- Tracer cleanup removed
 end
 
 local function cleanup()
@@ -2318,16 +2686,27 @@ end
 -- // LOADING GUI (REMOVED) \\
 
 -- // MAIN SCRIPT STARTUP \\
+-- Load saved data first
+local dataLoaded = loadPlayerData()
+
 -- Auto-start without loading GUI
 task.spawn(function()
 	-- Start main script immediately
 	toggled = true
-	print("⚔ Auto Melee: ON")
+	print("⚔� Auto Melee: ON")
 	sessionStartTime = tick()
 	totalHits = 0
 	targetHistory = {}
 	showNotification()
 	startFiring()
+
+	-- Auto-save every 30 seconds
+	while true do
+		task.wait(30)
+		if scriptActive then
+			savePlayerData()
+		end
+	end
 end)
 
 print("✅ PLU.V5 Loaded")
