@@ -1,5 +1,3 @@
--- Prisonlife.txt (Ultimate V5 - Glassy UI + Settings + Keybinds)
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
@@ -12,18 +10,26 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 -- // CONFIGURATION (Default Keys - Can be changed in Settings) \\
 local SETTINGS = {
-	TOGGLE_KEY = Enum.KeyCode.R,
-	DESTROY_KEY = Enum.KeyCode.P,
-	PRIORITY_KEY = Enum.KeyCode.T,
-	TELEPORT_KEY = Enum.KeyCode.Y,
-	ONE_SHOT_TP_KEY = Enum.KeyCode.H,
-	RANGE_INCREASE_KEY = Enum.KeyCode.RightBracket,
-	RANGE_DECREASE_KEY = Enum.KeyCode.LeftBracket,
-	UNSTICK_KEY = Enum.KeyCode.G,
-	POSITION_TOGGLE_KEY = Enum.KeyCode.L,
-	SPEED_TOGGLE_KEY = Enum.KeyCode.LeftControl,
-	NOCLIP_KEY = Enum.KeyCode.N,
-	UI_TOGGLE_KEY = Enum.KeyCode.End
+	TOGGLE_KEY = nil,
+	DESTROY_KEY = nil,
+	PRIORITY_KEY = nil,
+	TELEPORT_KEY = nil,
+	ONE_SHOT_TP_KEY = nil,
+	RANGE_INCREASE_KEY = nil,
+	RANGE_DECREASE_KEY = nil,
+	UNSTICK_KEY = nil,
+	POSITION_TOGGLE_KEY = nil,
+	SPEED_TOGGLE_KEY = nil,
+	NOCLIP_KEY = nil,
+	UI_TOGGLE_KEY = nil,
+	AIMBOT_KEY = nil,
+	ESP_KEY = nil,
+	FLY_KEY = nil,
+	JUMP_KEY = nil,
+	FULLBRIGHT_KEY = nil,
+	ANTIAIM_KEY = nil,
+	INFINITE_JUMP_KEY = nil,
+	FREECAM_KEY = nil
 }
 
 -- Constants
@@ -60,12 +66,275 @@ local currentSpeedValue = 50 -- Default speed value (1-200)
 local isNoclipEnabled = false
 local uiVisible = true
 
+-- New feature states
+local isAimbotEnabled = false
+local isESPEnabled = false
+local isFlyEnabled = false
+local isFullbrightEnabled = false
+local isAntiAimEnabled = false
+local isInfiniteJumpEnabled = false
+local isFreecamEnabled = false
+local flySpeed = 50
+local aimbotFOV = 90
+local espRange = 500
+local currentAimTarget = nil
+local espObjects = {}
+local freecamCamera = nil
+local originalCamera = nil
+local flyVelocity = Vector3.new(0, 0, 0)
+local antiAimAngle = 0
+
 local lastSafePosition = Vector3.new(0, 0, 0)
 
 local savedPositions = {}
 local savedWaypointPos = UDim2.new(0, 20, 0, 20) -- Persists position
 local waypointGui = nil
 local scrollFrame = nil
+
+-- // MISSING FUNCTIONS (Moved to top to fix nil value errors) \\
+
+-- ESP Functions
+local function updateESP()
+	if not isESPEnabled then return end
+	
+	-- Clear existing ESP objects
+	for _, obj in pairs(espObjects) do
+		if obj and obj.Parent then
+			obj:Destroy()
+		end
+	end
+	espObjects = {}
+	
+	for _, otherPlayer in pairs(Players:GetPlayers()) do
+		if otherPlayer ~= player and otherPlayer.Team ~= player.Team then
+			local character = otherPlayer.Character
+			if character then
+				local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+				local humanoid = character:FindFirstChild("Humanoid")
+				if humanoidRootPart and humanoid and humanoid.Health > 0 then
+					local distance = (player.Character and player.Character:FindFirstChild("HumanoidRootPart") and (player.Character.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude or math.huge)
+					
+					if distance <= espRange then
+						-- Create ESP Box
+						local espBox = Instance.new("BoxHandleAdornment")
+						espBox.Name = "ESPBox"
+						espBox.Size = character:GetExtentsSize()
+						espBox.CFrame = humanoidRootPart.CFrame
+						espBox.Color3 = otherPlayer.Team and otherPlayer.TeamColor.Color or Color3.fromRGB(255, 0, 0)
+						espBox.Transparency = 0.3
+						espBox.AlwaysOnTop = true
+						espBox.ZIndex = 10
+						espBox.Adornee = character
+						espBox.Parent = character
+						
+						-- Create ESP Label
+						local espLabel = Instance.new("BillboardGui")
+						espLabel.Name = "ESPLabel"
+						espLabel.Size = UDim2.new(0, 100, 0, 50)
+						espLabel.StudsOffset = Vector3.new(0, 3, 0)
+						espLabel.AlwaysOnTop = true
+						espLabel.Parent = humanoidRootPart
+						
+						local nameLabel = Instance.new("TextLabel")
+						nameLabel.Size = UDim2.new(1, 0, 0, 20)
+						nameLabel.BackgroundTransparency = 0.5
+						nameLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+						nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+						nameLabel.Text = otherPlayer.Name
+						nameLabel.Font = Enum.Font.SourceSansBold
+						nameLabel.TextSize = 14
+						nameLabel.Parent = espLabel
+						
+						local healthLabel = Instance.new("TextLabel")
+						healthLabel.Size = UDim2.new(1, 0, 0, 20)
+						healthLabel.Position = UDim2.new(0, 0, 0, 20)
+						healthLabel.BackgroundTransparency = 0.5
+						healthLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+						healthLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+						healthLabel.Text = string.format("HP: %.0f", humanoid.Health)
+						healthLabel.Font = Enum.Font.SourceSans
+						healthLabel.TextSize = 12
+						healthLabel.Parent = espLabel
+						
+						table.insert(espObjects, espBox)
+						table.insert(espObjects, espLabel)
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Fly Functions
+local function updateFly()
+	if not isFlyEnabled then return end
+	
+	local character = player.Character
+	if not character then return end
+	
+	local humanoid = character:FindFirstChild("Humanoid")
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	
+	if humanoid and humanoidRootPart then
+		humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+		
+		local moveDirection = humanoid.MoveDirection
+		if moveDirection.Magnitude > 0 then
+			flyVelocity = moveDirection * flySpeed
+		else
+			flyVelocity = flyVelocity * 0.9 -- Damping
+		end
+		
+		humanoidRootPart.Velocity = flyVelocity
+	end
+end
+
+-- Fullbright Functions
+local function toggleFullbright()
+	if isFullbrightEnabled then
+		game.Lighting.Ambient = Color3.new(1, 1, 1)
+		game.Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+		game.Lighting.Brightness = 2
+	else
+		game.Lighting.Ambient = Color3.new(0, 0, 0)
+		game.Lighting.OutdoorAmbient = Color3.new(0.5, 0.5, 0.5)
+		game.Lighting.Brightness = 1
+	end
+end
+
+-- Anti-Aim Functions
+local function updateAntiAim()
+	if not isAntiAimEnabled then return end
+	
+	local character = player.Character
+	if not character then return end
+	
+	local humanoid = character:FindFirstChild("Humanoid")
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	
+	if humanoid and humanoidRootPart then
+		humanoid.AutoRotate = false
+		antiAimAngle = antiAimAngle + 5
+		local newCFrame = CFrame.new(humanoidRootPart.Position) * CFrame.Angles(0, math.rad(antiAimAngle), 0)
+		humanoidRootPart.CFrame = newCFrame
+	end
+end
+
+-- Infinite Jump Functions
+local function handleInfiniteJump()
+	if not isInfiniteJumpEnabled then return end
+	
+	local character = player.Character
+	if not character then return end
+	
+	local humanoid = character:FindFirstChild("Humanoid")
+	if humanoid and humanoid:GetState() == Enum.HumanoidStateType.Freefall then
+		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+	end
+end
+
+-- Freecam Functions
+local function toggleFreecam()
+	if isFreecamEnabled then
+		-- Enable freecam
+		local character = player.Character
+		if character then
+			originalCamera = Workspace.CurrentCamera.CameraSubject
+			freecamCamera = Instance.new("Part")
+			freecamCamera.Name = "FreecamCamera"
+			freecamCamera.Anchored = true
+			freecamCamera.CanCollide = false
+			freecamCamera.Transparency = 1
+			freecamCamera.Position = character:FindFirstChild("HumanoidRootPart").Position
+			freecamCamera.Parent = Workspace
+			
+			Workspace.CurrentCamera.CameraSubject = freecamCamera
+		end
+	else
+		-- Disable freecam
+		if freecamCamera then
+			freecamCamera:Destroy()
+			freecamCamera = nil
+		end
+		
+		if originalCamera then
+			Workspace.CurrentCamera.CameraSubject = originalCamera
+			originalCamera = nil
+		end
+	end
+end
+
+local function updateFreecam()
+	if not isFreecamEnabled or not freecamCamera then return end
+	
+	local moveSpeed = 50
+	local camera = Workspace.CurrentCamera
+	
+	local forward = camera.CFrame.LookVector
+	local right = camera.CFrame.RightVector
+	local up = Vector3.new(0, 1, 0)
+	
+	local moveDirection = Vector3.new(0, 0, 0)
+	
+	if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+		moveDirection = moveDirection + forward
+	end
+	if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+		moveDirection = moveDirection - forward
+	end
+	if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+		moveDirection = moveDirection - right
+	end
+	if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+		moveDirection = moveDirection + right
+	end
+	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+		moveDirection = moveDirection + up
+	end
+	if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+		moveDirection = moveDirection - up
+	end
+	
+	if moveDirection.Magnitude > 0 then
+		moveDirection = moveDirection.Unit * moveSpeed
+		freecamCamera.Position = freecamCamera.Position + moveDirection * 0.016 -- ~60 FPS
+	end
+end
+
+-- Aimbot Functions
+local function getAimbotTarget()
+	local character = player.Character
+	if not character then return nil end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return nil end
+	
+	local myTeam = player.Team
+	local bestTarget = nil
+	local bestDistance = aimbotFOV
+	
+	for _, otherPlayer in pairs(Players:GetPlayers()) do
+		if otherPlayer ~= player and otherPlayer.Team ~= myTeam then
+			local otherCharacter = otherPlayer.Character
+			if otherCharacter then
+				local otherHRP = otherCharacter:FindFirstChild("HumanoidRootPart")
+				local otherHumanoid = otherCharacter:FindFirstChild("Humanoid")
+				if otherHRP and otherHumanoid and otherHumanoid.Health > 0 then
+					local screenPos, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(otherHRP.Position)
+					if onScreen then
+						local distance = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Workspace.CurrentCamera.ViewportSize.X/2, Workspace.CurrentCamera.ViewportSize.Y/2)).Magnitude
+						if distance < bestDistance then
+							bestDistance = distance
+							bestTarget = otherHRP
+						end
+					end
+				end
+			end
+		end
+	end
+	
+	return bestTarget
+end
 
 -- // GLASSY THEME HELPER \\
 local function applyGlassStyle(element)
@@ -230,6 +499,13 @@ local function openSettingsMenu()
 	createSettingRow("Speed Boost", "SPEED_TOGGLE_KEY")
 	createSettingRow("Noclip", "NOCLIP_KEY")
 	createSettingRow("Toggle UI", "UI_TOGGLE_KEY")
+	createSettingRow("Aimbot", "AIMBOT_KEY")
+	createSettingRow("ESP", "ESP_KEY")
+	createSettingRow("Fly", "FLY_KEY")
+	createSettingRow("Fullbright", "FULLBRIGHT_KEY")
+	createSettingRow("Anti-Aim", "ANTIAIM_KEY")
+	createSettingRow("Infinite Jump", "INFINITE_JUMP_KEY")
+	createSettingRow("Freecam", "FREECAM_KEY")
 
 	-- Speed Slider Section
 	local speedSection = Instance.new("Frame")
@@ -349,8 +625,11 @@ end
 
 -- // GUI BUILDER \\
 local function createNotificationGui()
+	-- FIX: Destroy existing GUI to ensure fresh state on reload
 	local screenGui = playerGui:FindFirstChild("MeleeTargetNotification")
-	if screenGui then return screenGui end
+	if screenGui then 
+		screenGui:Destroy() 
+	end
 
 	screenGui = Instance.new("ScreenGui")
 	screenGui.Name = "MeleeTargetNotification"
@@ -939,7 +1218,28 @@ local function updateStatsPanel()
 	if extraLabel then
 		local speedStr = isSpeedEnabled and "ON" or "OFF"
 		local noclipStr = isNoclipEnabled and "ON" or "OFF"
-		extraLabel.Text = string.format("⚡ Speed: %s | 🧱 Noclip: %s", speedStr, noclipStr)
+		local aimbotStr = isAimbotEnabled and "ON" or "OFF"
+		local espStr = isESPEnabled and "ON" or "OFF"
+		local flyStr = isFlyEnabled and "ON" or "OFF"
+		local fullbrightStr = isFullbrightEnabled and "ON" or "OFF"
+		local antiAimStr = isAntiAimEnabled and "ON" or "OFF"
+		local infiniteJumpStr = isInfiniteJumpEnabled and "ON" or "OFF"
+		local freecamStr = isFreecamEnabled and "ON" or "OFF"
+
+		-- Create a compact display of active features
+		local activeFeatures = {}
+		if isSpeedEnabled then table.insert(activeFeatures, "Speed") end
+		if isNoclipEnabled then table.insert(activeFeatures, "Noclip") end
+		if isAimbotEnabled then table.insert(activeFeatures, "Aimbot") end
+		if isESPEnabled then table.insert(activeFeatures, "ESP") end
+		if isFlyEnabled then table.insert(activeFeatures, "Fly") end
+		if isFullbrightEnabled then table.insert(activeFeatures, "Fullbright") end
+		if isAntiAimEnabled then table.insert(activeFeatures, "Anti-Aim") end
+		if isInfiniteJumpEnabled then table.insert(activeFeatures, "Inf Jump") end
+		if isFreecamEnabled then table.insert(activeFeatures, "Freecam") end
+
+		local featureText = #activeFeatures > 0 and table.concat(activeFeatures, ", ") or "None"
+		extraLabel.Text = "🎯 Active: " .. featureText
 	end
 
 	if tpLabel then
@@ -1224,6 +1524,31 @@ RunService.Heartbeat:Connect(function()
 		if isNoclipEnabled and character then
 			forceNoclip(character)
 		end
+
+		-- Update fly
+		updateFly()
+
+		-- Update anti-aim
+		updateAntiAim()
+
+		-- Handle infinite jump
+		handleInfiniteJump()
+
+		-- Update freecam
+		updateFreecam()
+
+		-- Update aimbot
+		if isAimbotEnabled then
+			local target = getAimbotTarget()
+			if target then
+				currentAimTarget = target
+				local character = player.Character
+				if character and character:FindFirstChild("HumanoidRootPart") then
+					local lookAt = target.Position - character.HumanoidRootPart.Position
+					character.HumanoidRootPart.CFrame = CFrame.new(character.HumanoidRootPart.Position, lookAt)
+				end
+			end
+		end
 	end
 end)
 
@@ -1371,6 +1696,34 @@ local function showModeNotification(mode)
 		label.Text = "🧱 Noclip: ON"
 	elseif mode == "noclipOff" then
 		label.Text = "🧱 Noclip: OFF"
+	elseif mode == "aimbotOn" then
+		label.Text = "🎯 Aimbot: ON"
+	elseif mode == "aimbotOff" then
+		label.Text = "🎯 Aimbot: OFF"
+	elseif mode == "espOn" then
+		label.Text = "👁️ ESP: ON"
+	elseif mode == "espOff" then
+		label.Text = "👁️ ESP: OFF"
+	elseif mode == "flyOn" then
+		label.Text = "🦅 Fly: ON"
+	elseif mode == "flyOff" then
+		label.Text = "🦅 Fly: OFF"
+	elseif mode == "fullbrightOn" then
+		label.Text = "💡 Fullbright: ON"
+	elseif mode == "fullbrightOff" then
+		label.Text = "💡 Fullbright: OFF"
+	elseif mode == "antiAimOn" then
+		label.Text = "🔄 Anti-Aim: ON"
+	elseif mode == "antiAimOff" then
+		label.Text = "🔄 Anti-Aim: OFF"
+	elseif mode == "infiniteJumpOn" then
+		label.Text = "🦘 Infinite Jump: ON"
+	elseif mode == "infiniteJumpOff" then
+		label.Text = "🦘 Infinite Jump: OFF"
+	elseif mode == "freecamOn" then
+		label.Text = "📷 Freecam: ON"
+	elseif mode == "freecamOff" then
+		label.Text = "📷 Freecam: OFF"
 	end
 
 	TweenService:Create(modeNotif, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
@@ -1418,9 +1771,9 @@ local function startFiring()
 			if target then
 				pcall(function()
 					local meleeEvent = ReplicatedStorage:FindFirstChild("meleeEvent")
-				if meleeEvent then
-					meleeEvent:FireServer(target)
-				end
+					if meleeEvent then
+						meleeEvent:FireServer(target)
+					end
 					totalHits = totalHits + 1
 				end)
 			end
@@ -1537,7 +1890,7 @@ connections[#connections + 1] = UserInputService.InputBegan:Connect(function(inp
 
 	elseif input.KeyCode == SETTINGS.NOCLIP_KEY then
 		isNoclipEnabled = not isNoclipEnabled
-		
+
 		local character = player.Character
 		if isNoclipEnabled then
 			print("🧱 Noclip: ON - You can now walk through walls!")
@@ -1550,7 +1903,7 @@ connections[#connections + 1] = UserInputService.InputBegan:Connect(function(inp
 				restoreCollision(character)
 			end
 		end
-		
+
 		showModeNotification(isNoclipEnabled and "noclipOn" or "noclipOff")
 		updateStatsPanel()
 
@@ -1603,8 +1956,328 @@ connections[#connections + 1] = UserInputService.InputBegan:Connect(function(inp
 		MAX_DISTANCE = math.max(10, MAX_DISTANCE - 10)
 		print("📏 Range Decreased: " .. MAX_DISTANCE)
 		updateStatsPanel()
+
+		-- New feature keybinds
+	elseif input.KeyCode == SETTINGS.AIMBOT_KEY then
+		isAimbotEnabled = not isAimbotEnabled
+		showModeNotification(isAimbotEnabled and "aimbotOn" or "aimbotOff")
+		updateStatsPanel()
+
+	elseif input.KeyCode == SETTINGS.ESP_KEY then
+		isESPEnabled = not isESPEnabled
+		if isESPEnabled then
+			updateESP()
+		else
+			-- Clear ESP objects
+			for _, obj in pairs(espObjects) do
+				if obj and obj.Parent then
+					obj:Destroy()
+				end
+			end
+			espObjects = {}
+		end
+		showModeNotification(isESPEnabled and "espOn" or "espOff")
+		updateStatsPanel()
+
+	elseif input.KeyCode == SETTINGS.FLY_KEY then
+		isFlyEnabled = not isFlyEnabled
+		if not isFlyEnabled then
+			local character = player.Character
+			if character and character:FindFirstChild("Humanoid") then
+				character.Humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+			end
+		end
+		showModeNotification(isFlyEnabled and "flyOn" or "flyOff")
+		updateStatsPanel()
+
+	elseif input.KeyCode == SETTINGS.FULLBRIGHT_KEY then
+		isFullbrightEnabled = not isFullbrightEnabled
+		toggleFullbright()
+		showModeNotification(isFullbrightEnabled and "fullbrightOn" or "fullbrightOff")
+		updateStatsPanel()
+
+	elseif input.KeyCode == SETTINGS.ANTIAIM_KEY then
+		isAntiAimEnabled = not isAntiAimEnabled
+		if not isAntiAimEnabled then
+			local character = player.Character
+			if character and character:FindFirstChild("Humanoid") then
+				character.Humanoid.AutoRotate = true
+			end
+		end
+		showModeNotification(isAntiAimEnabled and "antiAimOn" or "antiAimOff")
+		updateStatsPanel()
+
+	elseif input.KeyCode == SETTINGS.INFINITE_JUMP_KEY then
+		isInfiniteJumpEnabled = not isInfiniteJumpEnabled
+		showModeNotification(isInfiniteJumpEnabled and "infiniteJumpOn" or "infiniteJumpOff")
+		updateStatsPanel()
+
+	elseif input.KeyCode == SETTINGS.FREECAM_KEY then
+		isFreecamEnabled = not isFreecamEnabled
+		toggleFreecam()
+		showModeNotification(isFreecamEnabled and "freecamOn" or "freecamOff")
+		updateStatsPanel()
 	end
 end)
 
+-- // MISSING FUNCTIONS \\
+
+-- ESP Functions
+local function updateESP()
+	if not isESPEnabled then return end
+
+	-- Clear existing ESP objects
+	for _, obj in pairs(espObjects) do
+		if obj and obj.Parent then
+			obj:Destroy()
+		end
+	end
+	espObjects = {}
+
+	for _, otherPlayer in pairs(Players:GetPlayers()) do
+		if otherPlayer ~= player and otherPlayer.Team ~= player.Team then
+			local character = otherPlayer.Character
+			if character then
+				local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+				local humanoid = character:FindFirstChild("Humanoid")
+				if humanoidRootPart and humanoid and humanoid.Health > 0 then
+					local distance = (player.Character and player.Character:FindFirstChild("HumanoidRootPart") and (player.Character.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude or math.huge)
+
+					if distance <= espRange then
+						-- Create ESP Box
+						local espBox = Instance.new("BoxHandleAdornment")
+						espBox.Name = "ESPBox"
+						espBox.Size = character:GetExtentsSize()
+						espBox.CFrame = humanoidRootPart.CFrame
+						espBox.Color3 = otherPlayer.Team and otherPlayer.TeamColor.Color or Color3.fromRGB(255, 0, 0)
+						espBox.Transparency = 0.3
+						espBox.AlwaysOnTop = true
+						espBox.ZIndex = 10
+						espBox.Adornee = character
+						espBox.Parent = character
+
+						-- Create ESP Label
+						local espLabel = Instance.new("BillboardGui")
+						espLabel.Name = "ESPLabel"
+						espLabel.Size = UDim2.new(0, 100, 0, 50)
+						espLabel.StudsOffset = Vector3.new(0, 3, 0)
+						espLabel.AlwaysOnTop = true
+						espLabel.Parent = humanoidRootPart
+
+						local nameLabel = Instance.new("TextLabel")
+						nameLabel.Size = UDim2.new(1, 0, 0, 20)
+						nameLabel.BackgroundTransparency = 0.5
+						nameLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+						nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+						nameLabel.Text = otherPlayer.Name
+						nameLabel.Font = Enum.Font.SourceSansBold
+						nameLabel.TextSize = 14
+						nameLabel.Parent = espLabel
+
+						local healthLabel = Instance.new("TextLabel")
+						healthLabel.Size = UDim2.new(1, 0, 0, 20)
+						healthLabel.Position = UDim2.new(0, 0, 0, 20)
+						healthLabel.BackgroundTransparency = 0.5
+						healthLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+						healthLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+						healthLabel.Text = string.format("HP: %.0f", humanoid.Health)
+						healthLabel.Font = Enum.Font.SourceSans
+						healthLabel.TextSize = 12
+						healthLabel.Parent = espLabel
+
+						table.insert(espObjects, espBox)
+						table.insert(espObjects, espLabel)
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Fly Functions
+local function updateFly()
+	if not isFlyEnabled then return end
+
+	local character = player.Character
+	if not character then return end
+
+	local humanoid = character:FindFirstChild("Humanoid")
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+
+	if humanoid and humanoidRootPart then
+		humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+
+		local moveDirection = humanoid.MoveDirection
+		if moveDirection.Magnitude > 0 then
+			flyVelocity = moveDirection * flySpeed
+		else
+			flyVelocity = flyVelocity * 0.9 -- Damping
+		end
+
+		humanoidRootPart.Velocity = flyVelocity
+	end
+end
+
+-- Fullbright Functions
+local function toggleFullbright()
+	if isFullbrightEnabled then
+		game.Lighting.Ambient = Color3.new(1, 1, 1)
+		game.Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+		game.Lighting.Brightness = 2
+	else
+		game.Lighting.Ambient = Color3.new(0, 0, 0)
+		game.Lighting.OutdoorAmbient = Color3.new(0.5, 0.5, 0.5)
+		game.Lighting.Brightness = 1
+	end
+end
+
+-- Anti-Aim Functions
+local function updateAntiAim()
+	if not isAntiAimEnabled then return end
+
+	local character = player.Character
+	if not character then return end
+
+	local humanoid = character:FindFirstChild("Humanoid")
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+
+	if humanoid and humanoidRootPart then
+		humanoid.AutoRotate = false
+		antiAimAngle = antiAimAngle + 5
+		local newCFrame = CFrame.new(humanoidRootPart.Position) * CFrame.Angles(0, math.rad(antiAimAngle), 0)
+		humanoidRootPart.CFrame = newCFrame
+	end
+end
+
+-- Infinite Jump Functions
+local function handleInfiniteJump()
+	if not isInfiniteJumpEnabled then return end
+
+	local character = player.Character
+	if not character then return end
+
+	local humanoid = character:FindFirstChild("Humanoid")
+	if humanoid and humanoid:GetState() == Enum.HumanoidStateType.Freefall then
+		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+	end
+end
+
+-- Freecam Functions
+local function toggleFreecam()
+	if isFreecamEnabled then
+		-- Enable freecam
+		local character = player.Character
+		if character then
+			originalCamera = Workspace.CurrentCamera.CameraSubject
+			freecamCamera = Instance.new("Part")
+			freecamCamera.Name = "FreecamCamera"
+			freecamCamera.Anchored = true
+			freecamCamera.CanCollide = false
+			freecamCamera.Transparency = 1
+			freecamCamera.Position = character:FindFirstChild("HumanoidRootPart").Position
+			freecamCamera.Parent = Workspace
+
+			Workspace.CurrentCamera.CameraSubject = freecamCamera
+		end
+	else
+		-- Disable freecam
+		if freecamCamera then
+			freecamCamera:Destroy()
+			freecamCamera = nil
+		end
+
+		if originalCamera then
+			Workspace.CurrentCamera.CameraSubject = originalCamera
+			originalCamera = nil
+		end
+	end
+end
+
+local function updateFreecam()
+	if not isFreecamEnabled or not freecamCamera then return end
+
+	local moveSpeed = 50
+	local camera = Workspace.CurrentCamera
+
+	local forward = camera.CFrame.LookVector
+	local right = camera.CFrame.RightVector
+	local up = Vector3.new(0, 1, 0)
+
+	local moveDirection = Vector3.new(0, 0, 0)
+
+	if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+		moveDirection = moveDirection + forward
+	end
+	if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+		moveDirection = moveDirection - forward
+	end
+	if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+		moveDirection = moveDirection - right
+	end
+	if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+		moveDirection = moveDirection + right
+	end
+	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+		moveDirection = moveDirection + up
+	end
+	if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+		moveDirection = moveDirection - up
+	end
+
+	if moveDirection.Magnitude > 0 then
+		moveDirection = moveDirection.Unit * moveSpeed
+		freecamCamera.Position = freecamCamera.Position + moveDirection * 0.016 -- ~60 FPS
+	end
+end
+
+-- Aimbot Functions
+local function getAimbotTarget()
+	local character = player.Character
+	if not character then return nil end
+
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return nil end
+
+	local myTeam = player.Team
+	local bestTarget = nil
+	local bestDistance = aimbotFOV
+
+	for _, otherPlayer in pairs(Players:GetPlayers()) do
+		if otherPlayer ~= player and otherPlayer.Team ~= myTeam then
+			local otherCharacter = otherPlayer.Character
+			if otherCharacter then
+				local otherHRP = otherCharacter:FindFirstChild("HumanoidRootPart")
+				local otherHumanoid = otherCharacter:FindFirstChild("Humanoid")
+				if otherHRP and otherHumanoid and otherHumanoid.Health > 0 then
+					local screenPos, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(otherHRP.Position)
+					if onScreen then
+						local distance = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y/2)).Magnitude
+						if distance < bestDistance then
+							bestDistance = distance
+							bestTarget = otherHRP
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return bestTarget
+end
+
+-- // LOADING GUI (REMOVED) \\
+
+-- // MAIN SCRIPT STARTUP \\
+-- Auto-start without loading GUI
+task.spawn(function()
+	-- Start main script immediately
+	toggled = true
+	print("⚔ Auto Melee: ON")
+	sessionStartTime = tick()
+	totalHits = 0
+	targetHistory = {}
+	showNotification()
+	startFiring()
+end)
+
 print("✅ PLU.V5 Loaded")
-print("New: Custom Keybinds, Persistent UI, Glassy Theme")
