@@ -2746,19 +2746,25 @@ else
     print("📝 No save found. Using current script defaults.")
 end
 -- // Save \\
+
 task.spawn(function()
     while true do
-        task.wait(30)
-        if _G.PLifeSave then
-            local saveSettings = {}
-            for k, v in pairs(SETTINGS) do
-                if typeof(v) == "EnumItem" then
-                    saveSettings[k] = v.Name
-                elseif v ~= nil then
-                    saveSettings[k] = v
-                end
+        task.wait(30) -- Saves every 30 seconds
+        
+        -- Create a temporary table for saving
+        local saveSettings = {}
+        
+        -- Convert KeyCodes to Text so they don't break the JSON
+        for k, v in pairs(SETTINGS) do
+            if typeof(v) == "EnumItem" then
+                saveSettings[k] = v.Name
+            elseif v ~= nil then
+                saveSettings[k] = v
             end
+        end
 
+        -- Send it to the SaveManager
+        if _G.PLifeSave then
             pcall(function()
                 _G.PLifeSave({
                     waypoints = savedPositions,
@@ -2767,7 +2773,9 @@ task.spawn(function()
                     currentSpeedValue = currentSpeedValue
                 })
             end)
+            print("💾 Data auto-saved to workspace.")
         end
     end
 end)
+
 print("✅ PLU.V5 Loaded")
