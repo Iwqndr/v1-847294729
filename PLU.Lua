@@ -467,7 +467,7 @@ local function openSettingsMenu()
 		btn.Size = UDim2.new(0, 100, 0, 20)
 		btn.Position = UDim2.new(1, -110, 0.5, -10)
 		btn.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-		btn.Text = tostring(SETTINGS[settingKey].Name or SETTINGS[settingKey])
+		btn.Text = SETTINGS[settingKey] and SETTINGS[settingKey].Name or "UNBOUND"
 		btn.TextColor3 = Color3.new(1,1,1)
 		btn.Font = Enum.Font.GothamBold
 		btn.TextSize = 10
@@ -619,7 +619,8 @@ local function openSettingsMenu()
 		end
 	end)
 
-	-- Animate In
+	-- Animate In from right to left
+	settingsFrame.Position = UDim2.new(1, 10, 0, 0)
 	settingsFrame:TweenPosition(UDim2.new(1, -310, 0, 0), "Out", "Quad", 0.3, true)
 end
 
