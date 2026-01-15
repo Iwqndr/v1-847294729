@@ -1,6 +1,3 @@
--- Wonders UPLS (Universal Premium Loading System)
--- Modern Loading Screen with Smooth Animations
-
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
