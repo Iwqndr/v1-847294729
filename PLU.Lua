@@ -166,8 +166,17 @@ local function updateESP()
 end
 
 -- Fly Functions
+local flyBodyVelocity = nil
+
 local function updateFly()
-	if not isFlyEnabled then return end
+	if not isFlyEnabled then 
+		-- Clean up flight when disabled
+		if flyBodyVelocity then
+			flyBodyVelocity:Destroy()
+			flyBodyVelocity = nil
+		end
+		return 
+	end
 	
 	local character = player.Character
 	if not character then return end
@@ -176,16 +185,51 @@ local function updateFly()
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
 	
 	if humanoid and humanoidRootPart then
+		-- Set humanoid state to allow free movement
 		humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
 		
-		local moveDirection = humanoid.MoveDirection
-		if moveDirection.Magnitude > 0 then
-			flyVelocity = moveDirection * flySpeed
-		else
-			flyVelocity = flyVelocity * 0.9 -- Damping
+		-- Create or update BodyVelocity for flight
+		if not flyBodyVelocity then
+			flyBodyVelocity = Instance.new("BodyVelocity")
+			flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+			flyBodyVelocity.P = 1000
+			flyBodyVelocity.Parent = humanoidRootPart
 		end
 		
-		humanoidRootPart.Velocity = flyVelocity
+		-- Calculate fly direction based on camera and input
+		local camera = Workspace.CurrentCamera
+		local flyDirection = Vector3.new(0, 0, 0)
+		
+		-- Get input-based movement
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+			flyDirection = flyDirection + camera.CFrame.LookVector
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+			flyDirection = flyDirection - camera.CFrame.LookVector
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+			flyDirection = flyDirection - camera.CFrame.RightVector
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+			flyDirection = flyDirection + camera.CFrame.RightVector
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+			flyDirection = flyDirection + Vector3.new(0, 1, 0)
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+			flyDirection = flyDirection - Vector3.new(0, 1, 0)
+		end
+		
+		-- Apply velocity
+		if flyDirection.Magnitude > 0 then
+			flyDirection = flyDirection.Unit * flySpeed
+			flyBodyVelocity.Velocity = flyDirection
+		else
+			flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+		end
+		
+		-- Disable gravity while flying
+		humanoidRootPart.AssemblyLinearVelocity = flyBodyVelocity.Velocity
 	end
 end
 
@@ -1983,6 +2027,11 @@ connections[#connections + 1] = UserInputService.InputBegan:Connect(function(inp
 	elseif input.KeyCode == SETTINGS.FLY_KEY then
 		isFlyEnabled = not isFlyEnabled
 		if not isFlyEnabled then
+			-- Clean up flight when disabled
+			if flyBodyVelocity then
+				flyBodyVelocity:Destroy()
+				flyBodyVelocity = nil
+			end
 			local character = player.Character
 			if character and character:FindFirstChild("Humanoid") then
 				character.Humanoid:ChangeState(Enum.HumanoidStateType.Landed)
