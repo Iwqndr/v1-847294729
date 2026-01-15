@@ -9,28 +9,29 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 -- // CONFIGURATION (Default Keys - Can be changed in Settings) \\
-local SETTINGS = {
-	TOGGLE_KEY = nil,
-	DESTROY_KEY = nil,
-	PRIORITY_KEY = nil,
-	TELEPORT_KEY = nil,
-	ONE_SHOT_TP_KEY = nil,
-	RANGE_INCREASE_KEY = nil,
-	RANGE_DECREASE_KEY = nil,
-	UNSTICK_KEY = nil,
-	POSITION_TOGGLE_KEY = nil,
-	SPEED_TOGGLE_KEY = nil,
-	NOCLIP_KEY = nil,
-	UI_TOGGLE_KEY = nil,
-	AIMBOT_KEY = nil,
-	ESP_KEY = nil,
-	FLY_KEY = nil,
-	JUMP_KEY = nil,
-	FULLBRIGHT_KEY = nil,
-	ANTIAIM_KEY = nil,
-	INFINITE_JUMP_KEY = nil,
-	FREECAM_KEY = nil
-}
+local loadedData = _G.PLifeLoad and _G.PLifeLoad()
+
+if loadedData then
+    -- Restore normal variables
+    savedPositions = loadedData.waypoints or {}
+    flySpeed = loadedData.flySpeed or 50
+    currentSpeedValue = loadedData.currentSpeedValue or 50
+    
+    -- Restore Keybinds from the settings table
+    if loadedData.settings then
+        for keyName, keyString in pairs(loadedData.settings) do
+            if keyString and keyString ~= "nil" then
+                pcall(function()
+                    -- Converts "E" back into Enum.KeyCode.E
+                    SETTINGS[keyName] = Enum.KeyCode[keyString]
+                end)
+            end
+        end
+    end
+    print("✅ Settings & Keybinds Restored!")
+else
+    print("📝 No save found or SaveManager not loaded yet.")
+end
 
 -- Constants
 local FIRE_RATE = 0.05
