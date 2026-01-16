@@ -5,6 +5,28 @@ local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local SETTINGS = {
+	TOGGLE_KEY = Enum.KeyCode.RightShift,
+	DESTROY_KEY = Enum.KeyCode.Delete,
+	PRIORITY_KEY = Enum.KeyCode.P,
+	TELEPORT_KEY = Enum.KeyCode.Y,
+	ONE_SHOT_TP_KEY = Enum.KeyCode.H,
+	RANGE_INCREASE_KEY = Enum.KeyCode.Equals,
+	RANGE_DECREASE_KEY = Enum.KeyCode.Minus,
+	UNSTICK_KEY = Enum.KeyCode.R,
+	POSITION_TOGGLE_KEY = Enum.KeyCode.B,
+	SPEED_TOGGLE_KEY = Enum.KeyCode.LeftAlt,
+	NOCLIP_KEY = Enum.KeyCode.N,
+	UI_TOGGLE_KEY = Enum.KeyCode.U,
+	AIMBOT_KEY = Enum.KeyCode.F,
+	ESP_KEY = Enum.KeyCode.E,
+	FLY_KEY = Enum.KeyCode.G,
+	FULLBRIGHT_KEY = Enum.KeyCode.L,
+	ANTIAIM_KEY = Enum.KeyCode.K,
+	INFINITE_JUMP_KEY = Enum.KeyCode.J,
+	FREECAM_KEY = Enum.KeyCode.C,
+}
+
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
@@ -13,26 +35,38 @@ local loadedData = _G.PLifeLoad and _G.PLifeLoad()
 
 -- // STARTUP: LOAD SAVED SETTINGS \\
 local successLoad, loadedData = pcall(function() 
-    return _G.PLifeLoad and _G.PLifeLoad() 
+	return _G.PLifeLoad and _G.PLifeLoad() 
 end)
 
 if successLoad and loadedData then
+	savedPositions = loadedData.waypoints or {}
+	flySpeed = loadedData.flySpeed or 50
+	currentSpeedValue = loadedData.currentSpeedValue or 50
+
+	if loadedData.settings then
+		for keyName, keyString in pairs(loadedData.settings) do
+			if keyString and keyString ~= "nil" then
+				pcall(function()
+					SETTINGS[keyName] = Enum.KeyCode[keyString]
+				end)
+			end
+		end
+	end
+	print("✅ Settings & Keybinds Restored!")
+else
+	print("📝 No save found or SaveManager not ready.")
+end
+
+local loadedData = _G.PLifeLoad and _G.PLifeLoad()
+if loadedData then
     savedPositions = loadedData.waypoints or {}
     flySpeed = loadedData.flySpeed or 50
     currentSpeedValue = loadedData.currentSpeedValue or 50
-    
     if loadedData.settings then
         for keyName, keyString in pairs(loadedData.settings) do
-            if keyString and keyString ~= "nil" then
-                pcall(function()
-                    SETTINGS[keyName] = Enum.KeyCode[keyString]
-                end)
-            end
+            pcall(function() SETTINGS[keyName] = Enum.KeyCode[keyString] end)
         end
     end
-    print("✅ Settings & Keybinds Restored!")
-else
-    print("📝 No save found or SaveManager not ready.")
 end
 
 -- Constants
@@ -437,15 +471,15 @@ end
 
 -- Infinite Jump Functions
 local function handleInfiniteJump()
-	if not isInfiniteJumpEnabled then return end
-
-	local character = player.Character
-	if not character then return end
-
-	local humanoid = character:FindFirstChild("Humanoid")
-	if humanoid and humanoid:GetState() == Enum.HumanoidStateType.Freefall then
-		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-	end
+    if not isInfiniteJumpEnabled then return end
+    local character = player.Character
+    if not character then return end
+    local humanoid = character:FindFirstChild("Humanoid")
+    -- Only trigger jump if we are falling and not already jumping
+    if humanoid and humanoid:GetState() == Enum.HumanoidStateType.Freefall then
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        task.wait(0.1) -- Add a tiny wait to prevent double-jumping errors
+    end
 end
 
 -- Freecam Functions
@@ -555,7 +589,7 @@ end
 local function applyGlassStyle(element, customSettings)
 	if element:IsA("GuiObject") then
 		local settings = customSettings or {}
-		
+
 		-- Enhanced glassmorphism with blur effect
 		element.BackgroundColor3 = settings.bgColor or Color3.fromRGB(15, 15, 20)
 		element.BackgroundTransparency = settings.bgTransparency or 0.15
@@ -599,11 +633,11 @@ local function applyGlassStyle(element, customSettings)
 			shadow.BorderSizePixel = 0
 			shadow.ZIndex = element.ZIndex - 1
 			shadow.Parent = element
-			
+
 			local shadowCorner = Instance.new("UICorner")
 			shadowCorner.CornerRadius = UDim.new(0, settings.cornerRadius or 16)
 			shadowCorner.Parent = shadow
-			
+
 			local shadowGradient = Instance.new("UIGradient")
 			shadowGradient.Color = ColorSequence.new(Color3.fromRGB(0, 0, 0))
 			shadowGradient.Transparency = NumberSequence.new({
@@ -724,294 +758,287 @@ local function openSettingsMenu()
 		local btnCorner = Instance.new("UICorner")
 		btnCorner.CornerRadius = UDim.new(0, 4)
 		btnCorner.Parent = btn
---// Key
-btn.MouseButton1Click:Connect(function()
-    btn.Text = "Press Key..."
-    local input = UserInputService.InputBegan:Wait()
-    
-    if input.KeyCode and input.KeyCode ~= Enum.KeyCode.Unknown then
-        SETTINGS[settingKey] = input.KeyCode
-        btn.Text = input.KeyCode.Name
-        
-        -- Instant Save Logic
-        local instantSave = {}
-        for k, v in pairs(SETTINGS) do
-            if typeof(v) == "EnumItem" then 
-                instantSave[k] = v.Name 
-            elseif v ~= nil then 
-                instantSave[k] = v 
-            end
-        end
+		--// Key
+	btn.MouseButton1Click:Connect(function()
+	btn.Text = "Press Key..."
+	local input = UserInputService.InputBegan:Wait()
 
-        if _G.PLifeSave then
-            pcall(function()
-                _G.PLifeSave({
-                    settings = instantSave, 
-                    waypoints = savedPositions,
-                    flySpeed = flySpeed,
-                    currentSpeedValue = currentSpeedValue
-                })
-            end)
-        end
-    end
-end)
+	if input.KeyCode and input.KeyCode ~= Enum.KeyCode.Unknown then
+		SETTINGS[settingKey] = input.KeyCode
+		btn.Text = input.KeyCode.Name
 
-        -- 3. Trigger the global save function
-        if _G.PLifeSave then
-            _G.PLifeSave({
-                settings = instantSave, 
-                waypoints = savedPositions,
-                flySpeed = flySpeed,
-                currentSpeedValue = currentSpeedValue
-            })
-            print(" Keybind '" .. settingKey .. "' saved to file!")
-        end
-    end
-end)
-
-	createSettingRow("Toggle Script", "TOGGLE_KEY")
-	createSettingRow("Destroy Script", "DESTROY_KEY")
-	createSettingRow("Priority Mode", "PRIORITY_KEY")
-	createSettingRow("Teleport Spam", "TELEPORT_KEY")
-	createSettingRow("One-Shot TP", "ONE_SHOT_TP_KEY")
-	createSettingRow("Range +", "RANGE_INCREASE_KEY")
-	createSettingRow("Range -", "RANGE_DECREASE_KEY")
-	createSettingRow("Unstick", "UNSTICK_KEY")
-	createSettingRow("Toggle Pos", "POSITION_TOGGLE_KEY")
-	createSettingRow("Speed Boost", "SPEED_TOGGLE_KEY")
-	createSettingRow("Noclip", "NOCLIP_KEY")
-	createSettingRow("Toggle UI", "UI_TOGGLE_KEY")
-	createSettingRow("Aimbot", "AIMBOT_KEY")
-	createSettingRow("ESP", "ESP_KEY")
-	createSettingRow("Fly", "FLY_KEY")
-	createSettingRow("Fullbright", "FULLBRIGHT_KEY")
-	createSettingRow("Anti-Aim", "ANTIAIM_KEY")
-	createSettingRow("Infinite Jump", "INFINITE_JUMP_KEY")
-	createSettingRow("Freecam", "FREECAM_KEY")
-
-	-- Speed Slider Section
-	local speedSection = Instance.new("Frame")
-	speedSection.Size = UDim2.new(1, -10, 0, 100)
-	speedSection.Position = UDim2.new(0, 5, 0, 0)
-	speedSection.BackgroundTransparency = 1
-	speedSection.Parent = scroll
-
-	-- Movement Speed Slider
-	local moveSpeedLabel = Instance.new("TextLabel")
-	moveSpeedLabel.Size = UDim2.new(1, 0, 0, 20)
-	moveSpeedLabel.Position = UDim2.new(0, 0, 0, 0)
-	moveSpeedLabel.BackgroundTransparency = 1
-	moveSpeedLabel.Text = "⚡ Movement Speed: " .. currentSpeedValue
-	moveSpeedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-	moveSpeedLabel.Font = Enum.Font.Gotham
-	moveSpeedLabel.TextSize = 12
-	moveSpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
-	moveSpeedLabel.Parent = speedSection
-
-	-- Movement Speed Slider
-	local moveSliderFrame = Instance.new("Frame")
-	moveSliderFrame.Size = UDim2.new(0, 150, 0, 20)
-	moveSliderFrame.Position = UDim2.new(0, 0, 0, 25)
-	moveSliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-	moveSliderFrame.BorderSizePixel = 0
-	moveSliderFrame.Parent = speedSection
-
-	local moveSliderCorner = Instance.new("UICorner")
-	moveSliderCorner.CornerRadius = UDim.new(0, 10)
-	moveSliderCorner.Parent = moveSliderFrame
-
-	local moveSliderFill = Instance.new("Frame")
-	moveSliderFill.Size = UDim2.new(currentSpeedValue / 200, 0, 1, 0)
-	moveSliderFill.Position = UDim2.new(0, 0, 0, 0)
-	moveSliderFill.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
-	moveSliderFill.BorderSizePixel = 0
-	moveSliderFill.Parent = moveSliderFrame
-
-	local moveFillCorner = Instance.new("UICorner")
-	moveFillCorner.CornerRadius = UDim.new(0, 10)
-	moveFillCorner.Parent = moveSliderFill
-
-	local moveSliderButton = Instance.new("TextButton")
-	moveSliderButton.Size = UDim2.new(0, 20, 0, 20)
-	moveSliderButton.Position = UDim2.new(currentSpeedValue / 200, -10, 0, 0)
-	moveSliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	moveSliderButton.BorderSizePixel = 0
-	moveSliderButton.Text = ""
-	moveSliderButton.Parent = moveSliderFrame
-
-	local moveButtonCorner = Instance.new("UICorner")
-	moveButtonCorner.CornerRadius = UDim.new(0, 10)
-	moveButtonCorner.Parent = moveSliderButton
-
-	-- Movement Speed Text Box
-	local moveSpeedBox = Instance.new("TextBox")
-	moveSpeedBox.Size = UDim2.new(0, 50, 0, 20)
-	moveSpeedBox.Position = UDim2.new(0, 160, 0, 25)
-	moveSpeedBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-	moveSpeedBox.Text = tostring(currentSpeedValue)
-	moveSpeedBox.TextColor3 = Color3.new(1, 1, 1)
-	moveSpeedBox.Font = Enum.Font.Gotham
-	moveSpeedBox.TextSize = 12
-	moveSpeedBox.Parent = speedSection
-
-	local moveBoxCorner = Instance.new("UICorner")
-	moveBoxCorner.CornerRadius = UDim.new(0, 4)
-	moveBoxCorner.Parent = moveSpeedBox
-
-	-- Flight Speed Slider
-	local flySpeedLabel = Instance.new("TextLabel")
-	flySpeedLabel.Size = UDim2.new(1, 0, 0, 20)
-	flySpeedLabel.Position = UDim2.new(0, 0, 0, 50)
-	flySpeedLabel.BackgroundTransparency = 1
-	flySpeedLabel.Text = "🦅 Flight Speed: " .. flySpeed
-	flySpeedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-	flySpeedLabel.Font = Enum.Font.Gotham
-	flySpeedLabel.TextSize = 12
-	flySpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
-	flySpeedLabel.Parent = speedSection
-
-	-- Flight Speed Slider
-	local flySliderFrame = Instance.new("Frame")
-	flySliderFrame.Size = UDim2.new(0, 150, 0, 20)
-	flySliderFrame.Position = UDim2.new(0, 0, 0, 75)
-	flySliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-	flySliderFrame.BorderSizePixel = 0
-	flySliderFrame.Parent = speedSection
-
-	local flySliderCorner = Instance.new("UICorner")
-	flySliderCorner.CornerRadius = UDim.new(0, 10)
-	flySliderCorner.Parent = flySliderFrame
-
-	local flySliderFill = Instance.new("Frame")
-	flySliderFill.Size = UDim2.new(flySpeed / 200, 0, 1, 0)
-	flySliderFill.Position = UDim2.new(0, 0, 0, 0)
-	flySliderFill.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
-	flySliderFill.BorderSizePixel = 0
-	flySliderFill.Parent = flySliderFrame
-
-	local flyFillCorner = Instance.new("UICorner")
-	flyFillCorner.CornerRadius = UDim.new(0, 10)
-	flyFillCorner.Parent = flySliderFill
-
-	local flySliderButton = Instance.new("TextButton")
-	flySliderButton.Size = UDim2.new(0, 20, 0, 20)
-	flySliderButton.Position = UDim2.new(flySpeed / 200, -10, 0, 0)
-	flySliderButton.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
-	flySliderButton.BorderSizePixel = 0
-	flySliderButton.Text = ""
-	flySliderButton.Parent = flySliderFrame
-
-	local flyButtonCorner = Instance.new("UICorner")
-	flyButtonCorner.CornerRadius = UDim.new(0, 10)
-	flyButtonCorner.Parent = flySliderButton
-
-	-- Flight Speed Text Box
-	local flySpeedBox = Instance.new("TextBox")
-	flySpeedBox.Size = UDim2.new(0, 50, 0, 20)
-	flySpeedBox.Position = UDim2.new(0, 160, 0, 75)
-	flySpeedBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-	flySpeedBox.Text = tostring(flySpeed)
-	flySpeedBox.TextColor3 = Color3.new(1, 1, 1)
-	flySpeedBox.Font = Enum.Font.Gotham
-	flySpeedBox.TextSize = 12
-	flySpeedBox.Parent = speedSection
-
-	local flyBoxCorner = Instance.new("UICorner")
-	flyBoxCorner.CornerRadius = UDim.new(0, 4)
-	flyBoxCorner.Parent = flySpeedBox
-
-	-- Movement Speed functionality
-	local draggingMoveSlider = false
-
-	local function updateMoveSpeed(value)
-		value = math.max(1, math.min(200, math.floor(value)))
-		currentSpeedValue = value
-		moveSpeedLabel.Text = "⚡ Movement Speed: " .. value
-		moveSpeedBox.Text = tostring(value)
-		moveSliderFill.Size = UDim2.new(value / 200, 0, 1, 0)
-		moveSliderButton.Position = UDim2.new(value / 200, -10, 0, 0)
-		updateSpeed()
-		savePlayerData()
-	end
-
-	moveSliderButton.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			draggingMoveSlider = true
-		end
-	end)
-
-	UserInputService.InputChanged:Connect(function(input)
-		if draggingMoveSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
-			local relativeX = input.Position.X - moveSliderFrame.AbsolutePosition.X
-			local percentage = math.max(0, math.min(1, relativeX / moveSliderFrame.AbsoluteSize.X))
-			updateMoveSpeed(percentage * 200)
-		end
-	end)
-
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			draggingMoveSlider = false
-		end
-	end)
-
-	moveSpeedBox.FocusLost:Connect(function(enterPressed)
-		if enterPressed then
-			local value = tonumber(moveSpeedBox.Text)
-			if value then
-				updateMoveSpeed(value)
-			else
-				moveSpeedBox.Text = tostring(currentSpeedValue)
+		local instantSave = {}
+		for k, v in pairs(SETTINGS) do
+			if typeof(v) == "EnumItem" then
+				instantSave[k] = v.Name
+			elseif v ~= nil then
+				instantSave[k] = v
 			end
 		end
-	end)
 
-	-- Flight Speed functionality
-	local draggingFlySlider = false
-
-	local function updateFlySpeed(value)
-		value = math.max(1, math.min(200, math.floor(value)))
-		flySpeed = value
-		flySpeedLabel.Text = "🦅 Flight Speed: " .. value
-		flySpeedBox.Text = tostring(value)
-		flySliderFill.Size = UDim2.new(value / 200, 0, 1, 0)
-		flySliderButton.Position = UDim2.new(value / 200, -10, 0, 0)
-		savePlayerData()
+		if _G.PLifeSave then
+			pcall(function()
+				_G.PLifeSave({
+					settings = instantSave,
+					waypoints = savedPositions,
+					flySpeed = flySpeed,
+					currentSpeedValue = currentSpeedValue
+				})
+			end)
+		end
 	end
+end)
 
-	flySliderButton.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			draggingFlySlider = true
+end
+
+
+-- // Fixed Section //
+-- 3. Send it to the SaveManager
+
+
+createSettingRow("Toggle Script", "TOGGLE_KEY")
+createSettingRow("Destroy Script", "DESTROY_KEY")
+createSettingRow("Priority Mode", "PRIORITY_KEY")
+createSettingRow("Teleport Spam", "TELEPORT_KEY")
+createSettingRow("One-Shot TP", "ONE_SHOT_TP_KEY")
+createSettingRow("Range +", "RANGE_INCREASE_KEY")
+createSettingRow("Range -", "RANGE_DECREASE_KEY")
+createSettingRow("Unstick", "UNSTICK_KEY")
+createSettingRow("Toggle Pos", "POSITION_TOGGLE_KEY")
+createSettingRow("Speed Boost", "SPEED_TOGGLE_KEY")
+createSettingRow("Noclip", "NOCLIP_KEY")
+createSettingRow("Toggle UI", "UI_TOGGLE_KEY")
+createSettingRow("Aimbot", "AIMBOT_KEY")
+createSettingRow("ESP", "ESP_KEY")
+createSettingRow("Fly", "FLY_KEY")
+createSettingRow("Fullbright", "FULLBRIGHT_KEY")
+createSettingRow("Anti-Aim", "ANTIAIM_KEY")
+createSettingRow("Infinite Jump", "INFINITE_JUMP_KEY")
+createSettingRow("Freecam", "FREECAM_KEY")
+
+-- Speed Slider Section
+local speedSection = Instance.new("Frame")
+speedSection.Size = UDim2.new(1, -10, 0, 100)
+speedSection.Position = UDim2.new(0, 5, 0, 0)
+speedSection.BackgroundTransparency = 1
+speedSection.Parent = scroll
+
+-- Movement Speed Slider
+local moveSpeedLabel = Instance.new("TextLabel")
+moveSpeedLabel.Size = UDim2.new(1, 0, 0, 20)
+moveSpeedLabel.Position = UDim2.new(0, 0, 0, 0)
+moveSpeedLabel.BackgroundTransparency = 1
+moveSpeedLabel.Text = "⚡ Movement Speed: " .. currentSpeedValue
+moveSpeedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+moveSpeedLabel.Font = Enum.Font.Gotham
+moveSpeedLabel.TextSize = 12
+moveSpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+moveSpeedLabel.Parent = speedSection
+
+-- Movement Speed Slider
+local moveSliderFrame = Instance.new("Frame")
+moveSliderFrame.Size = UDim2.new(0, 150, 0, 20)
+moveSliderFrame.Position = UDim2.new(0, 0, 0, 25)
+moveSliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+moveSliderFrame.BorderSizePixel = 0
+moveSliderFrame.Parent = speedSection
+
+local moveSliderCorner = Instance.new("UICorner")
+moveSliderCorner.CornerRadius = UDim.new(0, 10)
+moveSliderCorner.Parent = moveSliderFrame
+
+local moveSliderFill = Instance.new("Frame")
+moveSliderFill.Size = UDim2.new(currentSpeedValue / 200, 0, 1, 0)
+moveSliderFill.Position = UDim2.new(0, 0, 0, 0)
+moveSliderFill.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+moveSliderFill.BorderSizePixel = 0
+moveSliderFill.Parent = moveSliderFrame
+
+local moveFillCorner = Instance.new("UICorner")
+moveFillCorner.CornerRadius = UDim.new(0, 10)
+moveFillCorner.Parent = moveSliderFill
+
+local moveSliderButton = Instance.new("TextButton")
+moveSliderButton.Size = UDim2.new(0, 20, 0, 20)
+moveSliderButton.Position = UDim2.new(currentSpeedValue / 200, -10, 0, 0)
+moveSliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+moveSliderButton.BorderSizePixel = 0
+moveSliderButton.Text = ""
+moveSliderButton.Parent = moveSliderFrame
+
+local moveButtonCorner = Instance.new("UICorner")
+moveButtonCorner.CornerRadius = UDim.new(0, 10)
+moveButtonCorner.Parent = moveSliderButton
+
+-- Movement Speed Text Box
+local moveSpeedBox = Instance.new("TextBox")
+moveSpeedBox.Size = UDim2.new(0, 50, 0, 20)
+moveSpeedBox.Position = UDim2.new(0, 160, 0, 25)
+moveSpeedBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+moveSpeedBox.Text = tostring(currentSpeedValue)
+moveSpeedBox.TextColor3 = Color3.new(1, 1, 1)
+moveSpeedBox.Font = Enum.Font.Gotham
+moveSpeedBox.TextSize = 12
+moveSpeedBox.Parent = speedSection
+
+local moveBoxCorner = Instance.new("UICorner")
+moveBoxCorner.CornerRadius = UDim.new(0, 4)
+moveBoxCorner.Parent = moveSpeedBox
+
+-- Flight Speed Slider
+local flySpeedLabel = Instance.new("TextLabel")
+flySpeedLabel.Size = UDim2.new(1, 0, 0, 20)
+flySpeedLabel.Position = UDim2.new(0, 0, 0, 50)
+flySpeedLabel.BackgroundTransparency = 1
+flySpeedLabel.Text = "🦅 Flight Speed: " .. flySpeed
+flySpeedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+flySpeedLabel.Font = Enum.Font.Gotham
+flySpeedLabel.TextSize = 12
+flySpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+flySpeedLabel.Parent = speedSection
+
+-- Flight Speed Slider
+local flySliderFrame = Instance.new("Frame")
+flySliderFrame.Size = UDim2.new(0, 150, 0, 20)
+flySliderFrame.Position = UDim2.new(0, 0, 0, 75)
+flySliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+flySliderFrame.BorderSizePixel = 0
+flySliderFrame.Parent = speedSection
+
+local flySliderCorner = Instance.new("UICorner")
+flySliderCorner.CornerRadius = UDim.new(0, 10)
+flySliderCorner.Parent = flySliderFrame
+
+local flySliderFill = Instance.new("Frame")
+flySliderFill.Size = UDim2.new(flySpeed / 200, 0, 1, 0)
+flySliderFill.Position = UDim2.new(0, 0, 0, 0)
+flySliderFill.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+flySliderFill.BorderSizePixel = 0
+flySliderFill.Parent = flySliderFrame
+
+local flyFillCorner = Instance.new("UICorner")
+flyFillCorner.CornerRadius = UDim.new(0, 10)
+flyFillCorner.Parent = flySliderFill
+
+local flySliderButton = Instance.new("TextButton")
+flySliderButton.Size = UDim2.new(0, 20, 0, 20)
+flySliderButton.Position = UDim2.new(flySpeed / 200, -10, 0, 0)
+flySliderButton.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+flySliderButton.BorderSizePixel = 0
+flySliderButton.Text = ""
+flySliderButton.Parent = flySliderFrame
+
+local flyButtonCorner = Instance.new("UICorner")
+flyButtonCorner.CornerRadius = UDim.new(0, 10)
+flyButtonCorner.Parent = flySliderButton
+
+-- Flight Speed Text Box
+local flySpeedBox = Instance.new("TextBox")
+flySpeedBox.Size = UDim2.new(0, 50, 0, 20)
+flySpeedBox.Position = UDim2.new(0, 160, 0, 75)
+flySpeedBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+flySpeedBox.Text = tostring(flySpeed)
+flySpeedBox.TextColor3 = Color3.new(1, 1, 1)
+flySpeedBox.Font = Enum.Font.Gotham
+flySpeedBox.TextSize = 12
+flySpeedBox.Parent = speedSection
+
+local flyBoxCorner = Instance.new("UICorner")
+flyBoxCorner.CornerRadius = UDim.new(0, 4)
+flyBoxCorner.Parent = flySpeedBox
+
+-- Movement Speed functionality
+local draggingMoveSlider = false
+
+local function updateMoveSpeed(value)
+    value = math.max(1, math.min(200, math.floor(value)))
+    currentSpeedValue = value
+	moveSpeedLabel.Text = "⚡ Movement Speed: " .. value
+	moveSpeedBox.Text = tostring(value)
+	moveSliderFill.Size = UDim2.new(value / 200, 0, 1, 0)
+	moveSliderButton.Position = UDim2.new(value / 200, -10, 0, 0)
+	updateSpeed()
+	savePlayerData()
+end
+
+moveSliderButton.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		draggingMoveSlider = true
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if draggingMoveSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local relativeX = input.Position.X - moveSliderFrame.AbsolutePosition.X
+		local percentage = math.max(0, math.min(1, relativeX / moveSliderFrame.AbsoluteSize.X))
+		updateMoveSpeed(percentage * 200)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		draggingMoveSlider = false
+	end
+end)
+
+moveSpeedBox.FocusLost:Connect(function(enterPressed)
+	if enterPressed then
+		local value = tonumber(moveSpeedBox.Text)
+		if value then
+			updateMoveSpeed(value)
+		else
+			moveSpeedBox.Text = tostring(currentSpeedValue)
 		end
-	end)
+	end
+end)
 
-	UserInputService.InputChanged:Connect(function(input)
-		if draggingFlySlider and input.UserInputType == Enum.UserInputType.MouseMovement then
-			local relativeX = input.Position.X - flySliderFrame.AbsolutePosition.X
-			local percentage = math.max(0, math.min(1, relativeX / flySliderFrame.AbsoluteSize.X))
-			updateFlySpeed(percentage * 200)
+-- Flight Speed functionality
+local draggingFlySlider = false
+
+local function updateFlySpeed(value)
+    value = math.max(1, math.min(500, math.floor(value)))
+    flySpeed = value
+	flySpeedLabel.Text = "🦅 Flight Speed: " .. value
+	flySpeedBox.Text = tostring(value)
+	flySliderFill.Size = UDim2.new(value / 200, 0, 1, 0)
+	flySliderButton.Position = UDim2.new(value / 200, -10, 0, 0)
+	savePlayerData()
+end
+
+flySliderButton.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		draggingFlySlider = true
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if draggingFlySlider and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local relativeX = input.Position.X - flySliderFrame.AbsolutePosition.X
+		local percentage = math.max(0, math.min(1, relativeX / flySliderFrame.AbsoluteSize.X))
+		updateFlySpeed(percentage * 200)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		draggingFlySlider = false
+	end
+end)
+
+flySpeedBox.FocusLost:Connect(function(enterPressed)
+	if enterPressed then
+		local value = tonumber(flySpeedBox.Text)
+		if value then
+			updateFlySpeed(value)
+		else
+			flySpeedBox.Text = tostring(flySpeed)
 		end
-	end)
+	end
+end)
 
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			draggingFlySlider = false
-		end
-	end)
-
-	flySpeedBox.FocusLost:Connect(function(enterPressed)
-		if enterPressed then
-			local value = tonumber(flySpeedBox.Text)
-			if value then
-				updateFlySpeed(value)
-			else
-				flySpeedBox.Text = tostring(flySpeed)
-			end
-		end
-	end)
-
-	-- Animate In from right to left
-	settingsFrame.Position = UDim2.new(1, 10, 0, 0)
-	settingsFrame:TweenPosition(UDim2.new(1, -360, 0, 0), "Out", "Quad", 0.3, true)
+-- Animate In from right to left
+settingsFrame.Position = UDim2.new(1, 10, 0, 0)
+settingsFrame:TweenPosition(UDim2.new(1, -360, 0, 0), "Out", "Quad", 0.3, true)
 end
 
 -- // GUI BUILDER \\
@@ -1165,7 +1192,7 @@ local function createNotificationGui()
 				Size = UDim2.new(0, 28, 0, 28),
 				BackgroundTransparency = 0.9
 			}):Play()
-			
+
 			-- Pulse the dot
 			TweenService:Create(statusDot, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, -1, true), {
 				Size = UDim2.new(0, 18, 0, 18),
@@ -2287,7 +2314,7 @@ connections[#connections + 1] = UserInputService.InputBegan:Connect(function(inp
 	end
 
 	-- Global Keys
-	if input.KeyCode == SETTINGS.UI_TOGGLE_KEY then
+	if SETTINGS and SETTINGS.UI_TOGGLE_KEY and input.KeyCode == SETTINGS.UI_TOGGLE_KEY then
 		uiVisible = not uiVisible
 		local notifGui = playerGui:FindFirstChild("MeleeTargetNotification")
 		if notifGui then notifGui.Enabled = uiVisible end
@@ -2724,59 +2751,52 @@ end
 local loadedData = _G.PLifeLoad()
 
 if loadedData then
-    -- Restore normal variables
-    savedPositions = loadedData.waypoints or {}
-    flySpeed = loadedData.flySpeed or 50
-    currentSpeedValue = loadedData.currentSpeedValue or 50
-    
-    -- Restore Keybinds from the settings table
-    if loadedData.settings then
-        for keyName, keyString in pairs(loadedData.settings) do
-            -- Only try to load it if the saved value isn't empty
-            if keyString and keyString ~= "nil" then
-                pcall(function()
-                    -- This converts the text "E" back into Enum.KeyCode.E
-                    SETTINGS[keyName] = Enum.KeyCode[keyString]
-                end)
-            end
-        end
-    end
-    print("✅ Settings & Keybinds Restored!")
+	-- Restore normal variables
+	savedPositions = loadedData.waypoints or {}
+	flySpeed = loadedData.flySpeed or 50
+	currentSpeedValue = loadedData.currentSpeedValue or 50
+
+	if loadedData.settings then
+		for keyName, keyString in pairs(loadedData.settings) do
+			
+			if keyString and keyString ~= "nil" then
+				pcall(function()
+					
+					SETTINGS[keyName] = Enum.KeyCode[keyString]
+				end)
+			end
+		end
+	end
+	print("✅ Settings & Keybinds Restored!")
 else
-    print("📝 No save found. Using current script defaults.")
+	print("📝 No save found. Using current script defaults.")
 end
 -- // Save \\
 
 task.spawn(function()
     while true do
-        task.wait(30) -- Saves every 30 seconds
-        
-        -- Create a temporary table for saving
-        local saveSettings = {}
-        
-        -- Convert KeyCodes to Text so they don't break the JSON
-        for k, v in pairs(SETTINGS) do
-            if typeof(v) == "EnumItem" then
-                saveSettings[k] = v.Name
-            elseif v ~= nil then
-                saveSettings[k] = v
+        task.wait(30)
+        if toggled then
+            local saveSettings = {}
+            
+            for k, v in pairs(SETTINGS) do
+                if typeof(v) == "EnumItem" then
+                    saveSettings[k] = v.Name -- Saves "E" instead of Enum.KeyCode.E
+                elseif v ~= nil then
+                    saveSettings[k] = v
+                end
             end
-        end
-
-        -- Send it to the SaveManager
-        if _G.PLifeSave then
-            pcall(function()
+-- SaveManager
+            if _G.PLifeSave then
                 _G.PLifeSave({
                     waypoints = savedPositions,
                     settings = saveSettings,
                     flySpeed = flySpeed,
                     currentSpeedValue = currentSpeedValue
                 })
-            end)
-
-			print("💾 Data auto-saved to workspace.")
-        end 
-    end 
+            end
+            print("💾 Data auto-saved to workspace.")
+        end
+    end
 end)
-
 print("✅ PLU.V5 Loaded")
